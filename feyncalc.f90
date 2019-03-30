@@ -3,8 +3,8 @@ module parameters
 
   !-- Parameters -------------------------------------------------
   integer, parameter :: D=3           !D=2 or D=3  
-  integer, parameter :: ScaleNum=128    !number of q bins of the external momentum
-  double precision, parameter   :: UVScale=128.0     !the upper bound of energy scale
+  integer, parameter :: ScaleNum=64    !number of q bins of the external momentum
+  double precision, parameter   :: UVScale=64.0     !the upper bound of energy scale
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
 
   integer            :: PID           ! the ID of this job
@@ -17,7 +17,7 @@ module parameters
   integer, parameter                     :: UpdateNum=4 ! number of updates
   double precision, dimension(UpdateNum) :: PropStep
   double precision, dimension(UpdateNum) :: AcceptStep
-  double precision, dimension(MaxOrder) :: ReWeightFactor       !reweightfactor for each order
+  double precision, dimension(0:MaxOrder) :: ReWeightFactor       !reweightfactor for each order
 
   integer                               :: CurrOrder
   integer                               :: CurrScale
@@ -76,10 +76,10 @@ program main
         call IncreaseOrder()
       else if (x<2.0/UpdateNum) then
         call DecreaseOrder()
-      ! else if (x<3.0/UpdateNum) then
-      !   call ChangeScale()
-      ! else if (x<4.0/UpdateNum) then
-      !   call ChangeMom()
+      else if (x<3.0/UpdateNum) then
+        call ChangeScale()
+      else if (x<4.0/UpdateNum) then
+        call ChangeMom()
       endif
       !if(mod(int(Step), 4)==0) call Measure()
       call Measure()
@@ -95,14 +95,13 @@ program main
         write(*,"(A16, f8.3)") "Decrease Order:", AcceptStep(2)/PropStep(2)
         write(*,"(A16, f8.3)") "Change Scale:", AcceptStep(3)/PropStep(3)
         write(*,"(A16, f8.3)") "Change Mom:", AcceptStep(4)/PropStep(4)
-        write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
+        ! write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
+        write(*, *) "coupling: ", DiffVer/Norm
       endif
       if (PrintCounter==1e7)  then
         call SaveToDisk()
         PrintCounter=0
       endif
-
-      !print *, CurrOrder
 
     end do
 
@@ -115,7 +114,7 @@ program main
       implicit none
       integer :: i
   ! For a given order, the bigger factor, the more accurate result 
-      ReWeightFactor(1:3)=(/1.0,1.0,20.0/)
+      ReWeightFactor(0:2)=(/1.0,10.0,20.0/)
       Mom0=0.0
 
       PropStep=0.0
@@ -135,19 +134,12 @@ program main
       end do
 
       CurrScale=ScaleNum
+      CurrOrder=0
+      CurrWeight=CalcWeight(CurrOrder)
     end subroutine
 
     subroutine Test()
       implicit none
-      ! Put all tests here
-      !if (cabs(Green(0.d0, -1.d0)+Green(0.d0, Beta-1.d0))>1e-6) then
-        !print *, "Green's function is not anti-periodic"
-        !stop
-      !endif
-
-      ! old=0.0
-      !call GenerateNewFreq(old, new, ratio)
-      ! print *, old, new, ratio
       return
     end subroutine
 
@@ -157,14 +149,18 @@ program main
     end subroutine
 
     double precision function Green(Mom, Scale, g_type)
+    !dimensionless green's function
       implicit none
       double precision :: k2
       integer :: g_type, Scale
       double precision, dimension(D) :: Mom
       k2=sum(Mom**2)+1.0
-      ! if(k2>UVScale) then
-      !   Green=0.0
-      ! else
+      
+      if(k2>UVScale/ScaleTable(Scale)) then
+        Green=0.0
+        return
+      endif
+
       if(g_type==0) then
         Green=1.0/k2 
       else 
@@ -186,7 +182,7 @@ program main
       implicit none
       double precision :: Factor
 
-      Factor=CurrWeight/abs(CurrWeight)
+      Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder)
   
       if(CurrOrder==0) then
         Norm=Norm+Factor
@@ -230,10 +226,12 @@ program main
       implicit none
       integer :: NewOrder
       if(NewOrder==0) then 
-        CalcWeight=1.0
+        CalcWeight=1.0/ScaleNum
       else if(NewOrder==1) then
         CalcWeight=Ver4_One(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
       endif
+      ! print *, CalcWeight
+      CalcWeight=CalcWeight*ReWeightFactor(NewOrder)
       return
     end function CalcWeight
     
@@ -241,22 +239,21 @@ program main
       !increase diagram order by one/change normalization diagram to physical diagram
       implicit none
       double precision :: R, Weight, Kamp, dK, theta, phi, Prop
-      double precision, dimension(D) :: NewMom
       if (CurrOrder==Order) return
       PropStep(1)=PropStep(1)+1.0
 
       ! Generate New Mom
       !!!! Hard way  !!!!!!!!!!!!!!!!!!!!!!!!!!
-      Kamp=grnd()*2.0
       dK=2.0
+      Kamp=grnd()*dK
       if(Kamp<=0.0) return
       phi=2.0*pi*grnd()
       theta=pi*grnd()
       if(theta==0.0) return
-      NewMom(1)=Kamp*sin(theta)*cos(phi)
-      NewMom(2)=Kamp*sin(theta)*sin(phi)
-      NewMom(D)=Kamp*cos(theta)
-      Prop=2.0*dK*2.0*pi*pi*sin(theta)*Kamp**(D-1)
+      LoopMom(1, CurrOrder+1)=Kamp*sin(theta)*cos(phi)
+      LoopMom(2, CurrOrder+1)=Kamp*sin(theta)*sin(phi)
+      LoopMom(3, CurrOrder+1)=Kamp*cos(theta)
+      Prop=dK*2.0*pi*pi*sin(theta)*Kamp**(D-1)
 
       !!! Simple way  !!!!!!!!!!!!!!!!!!!!!!!!!!
       ! do i=1, D
@@ -288,10 +285,10 @@ program main
       !!!!!!! Hard way !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       dK=2.0
       Kamp=norm2(LoopMom(:, CurrOrder))
-      if(Kamp<=0.0) return
+      if(Kamp<=0.0 .or. Kamp>=dK) return
       SinTheta=norm2(LoopMom(1:2, CurrOrder))/Kamp
       if(SinTheta==0.0) return
-      Prop=1.0/(2.0*dK*2.0*pi*pi*SinTheta*Kamp**(D-1))
+      Prop=1.0/(dK*2.0*pi*pi*SinTheta*Kamp**(D-1))
 
       !!!!!!! Simple way !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       ! do i=1, D
@@ -303,6 +300,7 @@ program main
       PropStep(2)=PropStep(2)+1.0
       Weight = CalcWeight(CurrOrder-1)
       R=abs(Weight)/abs(CurrWeight)*Prop
+      ! print *, R, Weight, CurrWeight, Prop
       if(grnd()<R) then
         AcceptStep(2)=AcceptStep(2)+1.0
         CurrWeight=Weight
@@ -314,8 +312,40 @@ program main
     subroutine ChangeScale()
       implicit none
       !TODO: don't forget to change all LoopMom with scale!
-      return
+      integer :: OldScale
+      double precision :: Weight
+      double precision :: R
 
+      ! if(CurrOrder==0) return
+      
+      OldScale=CurrScale
+      if(grnd()<0.5) then
+        CurrScale=CurrScale-1
+      else
+        CurrScale=CurrScale+1
+      endif
+
+      ! print *, CurrScale
+
+      if(CurrScale<1 .or. CurrScale>ScaleNum) then
+        CurrScale=OldScale
+        return
+      endif
+
+      PropStep(3) = PropStep(3) + 1.0
+
+      Weight = CalcWeight(CurrOrder)
+      R = abs(Weight)/abs(CurrWeight)
+      ! print *, R, Weight, CurrWeight
+  
+      if(grnd()<R) then
+        AcceptStep(3) = AcceptStep(3)+1.0
+        CurrWeight = Weight
+      else
+        CurrScale=OldScale
+      endif
+
+      return
     end subroutine
 
     subroutine ChangeMom()
@@ -340,7 +370,7 @@ program main
       R = prop*abs(Weight)/abs(CurrWeight)
   
       if(grnd()<R) then
-        AcceptStep(1) = AcceptStep(1)+1.0
+        AcceptStep(4) = AcceptStep(4)+1.0
         CurrWeight = Weight
         ! call UpdateState()
       else
@@ -363,7 +393,7 @@ program main
           Num=int(grnd()*D)+1
           new(Num)=new(Num)+sign(grnd(), grnd()-0.5)
           prop=1.0
-      else if(x<3.0/3.0) then
+      else if(x<2.0/3.0) then
           k=norm2(old) !sqrt(m_x^2+m_y^2+m_z^2)
           if(k==0.0)then
             prop=-1.0
@@ -396,7 +426,7 @@ program main
       if(LOrder==0) LWeight=EffVer(CurrScale)
       if(ROrder==0) RWeight=EffVer(CurrScale)
       Mom=LoopMom(:, InterMomIndex)
-      UWeight=LWeight*RWeight*Green(MomL1-MomL2+Mom, CurrScale, 0)*Green(Mom, CurrScale, 0)
+      UWeight=LWeight*RWeight*Green(MomL1-MomL2+Mom, CurrScale, 1)*Green(Mom, CurrScale, 0)
       if(Simple .eqv. .true.) then
         Ver4_One=UWeight*3.0/(2.0*pi)**D
         return
