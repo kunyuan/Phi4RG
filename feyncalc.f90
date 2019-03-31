@@ -4,7 +4,7 @@ module parameters
   !-- Parameters -------------------------------------------------
   integer, parameter :: D=3           !D=2 or D=3  
   integer, parameter :: ScaleNum=64    !number of q bins of the external momentum
-  double precision, parameter   :: UVScale=64.0     !the upper bound of energy scale
+  double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
 
   integer            :: PID           ! the ID of this job
@@ -22,12 +22,13 @@ module parameters
   integer                               :: CurrOrder
   integer                               :: CurrScale
   double precision                      :: CurrWeight
+  integer                               :: CurrIRScale
   double precision, dimension(D, MaxOrder+1)  :: LoopMom ! values to attach to each loop basis
   double precision, dimension(D)  :: Mom0 ! values to attach to each loop basis
 
   !--- Measurement ------------------------------------------------
   double precision, dimension(ScaleNum)       :: DiffVer(ScaleNum)
-  double precision                      :: Norm
+  double precision, dimension(ScaleNum)       :: Norm(ScaleNum)
 
   !-- Diagram Tables  --------------------------------------------
   double precision, dimension(ScaleNum)       :: EffVer(ScaleNum)
@@ -52,7 +53,7 @@ program main
     implicit none
     integer :: PrintCounter, SaveCounter, o
     double precision :: TotalStep  !total steps of this MC simulation
-    double precision :: x
+    double precision :: x, ClearStep, iBlck
   
     print *, 'BareCoupling, Order, TotalStep(*1e6), Seed, PID'
     read(*,*)  BareCoupling, Order, TotalStep, Seed, PID
@@ -68,6 +69,8 @@ program main
     call Test() !call test first to make sure all subroutines work as expected
   
     TotalStep=TotalStep*1.0e6
+    ClearStep=4
+    iBlck=0
     print *, "Start simulation..."
     do while (Step<TotalStep)
       Step=Step+1.0
@@ -88,6 +91,8 @@ program main
 
       PrintCounter=PrintCounter+1
       if (PrintCounter==1e6)  then
+        iBlck=iBlck+1
+        call SolveBetaFunc()
         write(*,*) 
         write(*,"(f8.2, A15)") Step/1e6, "million steps"
         write(*,"(A20)") "Accept Ratio: "
@@ -97,10 +102,20 @@ program main
         write(*,"(A16, f8.3)") "Change Mom:", AcceptStep(4)/PropStep(4)
         ! write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
         write(*, *) "coupling: ", DiffVer/Norm
+        write(*, *) "coupling: ", EffVer
       endif
       if (PrintCounter==1e7)  then
+        ! DiffVer=0.0
+        ! Norm=1.0e-10
         call SaveToDisk()
         PrintCounter=0
+      endif
+
+      if (abs(iBlck-ClearStep)<1.0e-4) then
+        ! DiffVer=0.0
+        ! Norm=1.0e-10
+        ClearStep=ClearStep*2
+        CurrIRScale=CurrIRScale/2
       endif
 
     end do
@@ -124,6 +139,9 @@ program main
       PrintCounter=0
       SaveCounter=0
 
+      DiffVer=0.0
+      Norm=1.0e-10
+
       do i=1, ScaleNum
         ScaleTable(i)=i*1.0/ScaleNum*UVScale
         EffVer(i)=BareCoupling
@@ -136,6 +154,7 @@ program main
       CurrScale=ScaleNum
       CurrOrder=0
       CurrWeight=CalcWeight(CurrOrder)
+      CurrIRScale=ScaleNum/2
     end subroutine
 
     subroutine Test()
@@ -156,10 +175,10 @@ program main
       double precision, dimension(D) :: Mom
       k2=sum(Mom**2)+1.0
       
-      if(k2>UVScale/ScaleTable(Scale)) then
-        Green=0.0
-        return
-      endif
+      ! if(k2>UVScale/ScaleTable(Scale)) then
+      !   Green=0.0
+      !   return
+      ! endif
 
       if(g_type==0) then
         Green=1.0/k2 
@@ -184,10 +203,12 @@ program main
 
       Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder)
   
-      if(CurrOrder==0) then
-        Norm=Norm+Factor
-      else
-        DiffVer(CurrScale)=DiffVer(CurrScale)+Factor
+      if(CurrIRScale<CurrScale) then
+        if(CurrOrder==0) then
+          Norm(CurrScale)=Norm(CurrScale)+Factor
+        else
+          DiffVer(CurrScale)=DiffVer(CurrScale)+Factor
+        endif
       endif
       return
     end subroutine
@@ -221,12 +242,27 @@ program main
       return
     end subroutine
 
+    subroutine SolveBetaFunc()
+      implicit none
+      integer :: i, start, end
+      double precision :: dg
+      do i=1, ScaleNum-1
+        start=ScaleNum-i+1
+        end=start-1
+        ! print *, start, end, dScaleTable(end), ScaleTable(start)
+        ! EffVer(end)=(EffVer(start)*ScaleTable(start)+dScaleTable(start)*DiffVer(start)/Norm)/ScaleTable(end)
+        dg=(-EffVer(start)-DiffVer(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        ! dg=(-EffVer(start)+3.0/16/pi*EffVer(start)**2)*dScaleTable(end)/ScaleTable(start)
+        EffVer(end)=EffVer(start)-dg
+      enddo
+    end subroutine
+
     double precision function CalcWeight(NewOrder)
       !calculate the weight for ALL diagrams in a given sector
       implicit none
       integer :: NewOrder
       if(NewOrder==0) then 
-        CalcWeight=1.0/ScaleNum
+        CalcWeight=1.0
       else if(NewOrder==1) then
         CalcWeight=Ver4_One(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
       endif
