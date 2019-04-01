@@ -8,9 +8,11 @@ module parameters
   double precision, parameter :: DeltaK=kMax/kNum
   double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
+  integer, parameter          :: SIGMA=1, GAMMA4=2
 
   integer            :: PID           ! the ID of this job
   integer            :: Order
+  double precision   :: Mass2         ! square mass
   double precision   :: BareCoupling         ! bare coupling
   integer            :: Seed          ! random-number seed
 
@@ -22,8 +24,10 @@ module parameters
   double precision, dimension(0:MaxOrder) :: ReWeightFactor       !reweightfactor for each order
 
   integer                                 :: CurrOrder, CurrScale, CurrIRScale
+  integer                                 :: CurrType    ! SelfEnergy: 1, Ver4: 2
   double precision                        :: CurrWeight
-  double precision, dimension(D, MaxOrder+1)  :: LoopMom ! values to attach to each loop basis
+  double precision, dimension(D, MaxOrder+3)  :: LoopMom ! values to attach to each loop basis
+  integer, dimension(2)                   :: LoopNum !self energy has two ext loops: Order+2, gamma4: Order
   double precision, dimension(D)          :: Mom0 ! values to attach to each loop basis
 
   !--- Measurement ------------------------------------------------
@@ -55,8 +59,8 @@ program main
     double precision :: TotalStep  !total steps of this MC simulation
     double precision :: x, AnnealStep, iBlck
   
-    print *, 'BareCoupling, Order, TotalStep(*1e6), Seed, PID'
-    read(*,*)  BareCoupling, Order, TotalStep, Seed, PID
+    print *, 'mass2, coupling, Order, TotalStep(*1e6), Seed, PID'
+    read(*,*) Mass2, BareCoupling, Order, TotalStep, Seed, PID
 
     ! For a given order, the bigger factor, the more accurate result 
 
@@ -139,6 +143,10 @@ program main
       DiffVer=0.0
       Norm=1.0e-10
 
+      CurrType=GAMMA4 !start with gamma4
+      LoopNum(SIGMA)=3
+      LoopNum(GAMMA4)=1
+
       do i=1, ScaleNum
         ScaleTable(i)=i*1.0/ScaleNum*UVScale
         EffVer(i)=BareCoupling
@@ -146,7 +154,7 @@ program main
         do j=1, kNum
           !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
           kamp=(j-0.5)*DeltaK
-          EffGreen(j, i)=1.0/(kamp**2+1.0)
+          EffGreen(j, i)=1.0/(kamp**2+1.0+Mass2)
         enddo
       end do
 
@@ -169,49 +177,6 @@ program main
       implicit none
       return
     end subroutine
-
-    double precision function Green(Mom, Scale, g_type)
-    !dimensionless green's function
-      implicit none
-      double precision :: kk, gg
-      integer :: g_type, Scale, kamp
-      double precision, dimension(D) :: Mom
-      kk=norm2(Mom)
-      if(kk<kMax) then
-        !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-        kamp=int(kk/DeltaK)+1
-        gg=EffGreen(kamp, Scale)
-      else
-        gg=1.0/kk/kk
-      endif
-      
-      ! if(k2>UVScale/ScaleTable(Scale)) then
-      !   Green=0.0
-      !   return
-      ! endif
-
-      if(g_type==0) then
-        Green=gg
-      else 
-        Green=-2.0*gg*gg !dG/dLn\lambda
-      endif
-
-      ! if(g_type==0) then
-      !   Green=1.0/(kk*kk+1.0)
-      ! else 
-      !   Green=-2.0/(kk*kk+1.0)/(kk*kk+1.0) !dG/dLn\lambda
-      ! endif
-
-      return
-    end function
-    
-    double precision function Ver4(VerType, Scale)
-      implicit none
-      integer :: VerType, Scale
-      ! Ver4=BareCoupling
-      Ver4=EffVer(Scale)
-      return
-    end function Ver4
 
     subroutine Measure()
       implicit none
@@ -280,7 +245,7 @@ program main
       if(NewOrder==0) then 
         CalcWeight=1.0
       else if(NewOrder==1) then
-        CalcWeight=Ver4_One(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
+        CalcWeight=Ver4_OneLoop(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
       endif
       ! print *, CalcWeight
       CalcWeight=CalcWeight*ReWeightFactor(NewOrder)
@@ -466,8 +431,50 @@ program main
       endif
     end subroutine
 
+    double precision function Green(Mom, Scale, g_type)
+    !dimensionless green's function
+      implicit none
+      double precision :: kk, gg
+      integer :: g_type, Scale, kamp
+      double precision, dimension(D) :: Mom
+      kk=norm2(Mom)
+      if(kk<kMax) then
+        !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+        kamp=int(kk/DeltaK)+1
+        gg=EffGreen(kamp, Scale)
+      else
+        gg=1.0/kk/kk
+      endif
+      
+      ! if(k2>UVScale/ScaleTable(Scale)) then
+      !   Green=0.0
+      !   return
+      ! endif
 
-    double precision function Ver4_One(LOrder, ROrder, MomL1, MomL2, MomR1, MomR2, InterMomIndex, Simple)
+      if(g_type==0) then
+        Green=gg
+      else 
+        Green=-2.0*gg*gg !dG/dLn\lambda
+      endif
+
+      ! if(g_type==0) then
+      !   Green=1.0/(kk*kk+1.0)
+      ! else 
+      !   Green=-2.0/(kk*kk+1.0)/(kk*kk+1.0) !dG/dLn\lambda
+      ! endif
+
+      return
+    end function
+    
+    double precision function Ver4(VerType, Scale)
+      implicit none
+      integer :: VerType, Scale
+      ! Ver4=BareCoupling
+      Ver4=EffVer(Scale)
+      return
+    end function Ver4
+
+    double precision function Ver4_OneLoop(LOrder, ROrder, MomL1, MomL2, MomR1, MomR2, InterMomIndex, Simple)
       implicit none
       double precision, dimension(D) :: MomL1, MomL2, MomR1, MomR2, Mom
       integer :: LOrder, ROrder !order of left and right ver4
@@ -480,7 +487,7 @@ program main
       Mom=LoopMom(:, InterMomIndex)
       UWeight=LWeight*RWeight*Green(MomL1-MomL2+Mom, CurrScale, 1)*Green(Mom, CurrScale, 0)
       if(Simple .eqv. .true.) then
-        Ver4_One=UWeight*3.0/(2.0*pi)**D
+        Ver4_OneLoop=UWeight*3.0/(2.0*pi)**D
         return
       endif
     end function
