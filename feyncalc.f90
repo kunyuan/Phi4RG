@@ -4,6 +4,8 @@ module parameters
   !-- Parameters -------------------------------------------------
   integer, parameter :: D=3           !D=2 or D=3  
   integer, parameter :: ScaleNum=64    !number of q bins of the external momentum
+  integer, parameter :: kNum=128
+  double precision, parameter :: kMax=8.0
   double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
 
@@ -13,27 +15,25 @@ module parameters
   integer            :: Seed          ! random-number seed
 
   !-- Markov Chain ----------------------------------------------
-  double precision                       :: Step        ! a counter to keep track of the current step number
-  integer, parameter                     :: UpdateNum=4 ! number of updates
-  double precision, dimension(UpdateNum) :: PropStep
-  double precision, dimension(UpdateNum) :: AcceptStep
+  double precision                        :: Step        ! a counter to keep track of the current step number
+  integer, parameter                      :: UpdateNum=4 ! number of updates
+  double precision, dimension(UpdateNum)  :: PropStep
+  double precision, dimension(UpdateNum)  :: AcceptStep
   double precision, dimension(0:MaxOrder) :: ReWeightFactor       !reweightfactor for each order
 
-  integer                               :: CurrOrder
-  integer                               :: CurrScale
-  double precision                      :: CurrWeight
-  integer                               :: CurrIRScale
+  integer                                 :: CurrOrder, CurrScale, CurrIRScale
+  double precision                        :: CurrWeight
   double precision, dimension(D, MaxOrder+1)  :: LoopMom ! values to attach to each loop basis
-  double precision, dimension(D)  :: Mom0 ! values to attach to each loop basis
+  double precision, dimension(D)          :: Mom0 ! values to attach to each loop basis
 
   !--- Measurement ------------------------------------------------
-  double precision, dimension(ScaleNum)       :: DiffVer(ScaleNum)
-  double precision, dimension(ScaleNum)       :: Norm(ScaleNum)
+  double precision, dimension(ScaleNum)       :: ScaleTable(ScaleNum), dScaleTable(ScaleNum)
+  double precision, dimension(ScaleNum)       :: DiffVer(ScaleNum), Norm(ScaleNum)
+  double precision, dimension(ScaleNum)       :: DiffSigma(kNum, ScaleNum), SigmaNorm(ScaleNum)
 
-  !-- Diagram Tables  --------------------------------------------
+  !-- Diagram Elements  --------------------------------------------
   double precision, dimension(ScaleNum)       :: EffVer(ScaleNum)
-  double precision, dimension(ScaleNum)       :: ScaleTable(ScaleNum)
-  double precision, dimension(ScaleNum)       :: dScaleTable(ScaleNum)
+  double precision, dimension(ScaleNum)       :: EffGreen(kNum, ScaleNum)
 
   !-- common parameters and variables ------------------------------
   ! THIS IS PROJECT-INDEPENDENT 
@@ -127,7 +127,8 @@ program main
 
     subroutine Initialize()
       implicit none
-      integer :: i
+      integer :: i, j
+      double precision :: kamp
   ! For a given order, the bigger factor, the more accurate result 
       ReWeightFactor(0:2)=(/1.0,10.0,20.0/)
       Mom0=0.0
@@ -145,6 +146,11 @@ program main
       do i=1, ScaleNum
         ScaleTable(i)=i*1.0/ScaleNum*UVScale
         EffVer(i)=BareCoupling
+
+        do j=1, kNum
+          kamp=(j-0.5)*kMax/kNum
+          EffGreen(j, i)=1.0/(kamp**2+1.0)
+        enddo
       end do
 
       do i=1, ScaleNum-1
