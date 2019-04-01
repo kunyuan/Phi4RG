@@ -1,11 +1,11 @@
 module parameters
   IMPLICIT NONE
-
   !-- Parameters -------------------------------------------------
   integer, parameter :: D=3           !D=2 or D=3  
-  integer, parameter :: ScaleNum=64    !number of q bins of the external momentum
-  integer, parameter :: kNum=128
+  integer, parameter :: ScaleNum=64    !number of scales
+  integer, parameter :: kNum=512       !k bins of Green's function
   double precision, parameter :: kMax=8.0
+  double precision, parameter :: DeltaK=kMax/kNum
   double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
 
@@ -51,9 +51,9 @@ program main
     use mt19937
     use parameters
     implicit none
-    integer :: PrintCounter, SaveCounter, o
+    integer :: PrintCounter, SaveCounter
     double precision :: TotalStep  !total steps of this MC simulation
-    double precision :: x, ClearStep, iBlck
+    double precision :: x, AnnealStep, iBlck
   
     print *, 'BareCoupling, Order, TotalStep(*1e6), Seed, PID'
     read(*,*)  BareCoupling, Order, TotalStep, Seed, PID
@@ -69,7 +69,7 @@ program main
     call Test() !call test first to make sure all subroutines work as expected
   
     TotalStep=TotalStep*1.0e6
-    ClearStep=4
+    AnnealStep=4
     iBlck=0
     print *, "Start simulation..."
     do while (Step<TotalStep)
@@ -105,16 +105,12 @@ program main
         write(*, *) "coupling: ", EffVer
       endif
       if (PrintCounter==1e7)  then
-        ! DiffVer=0.0
-        ! Norm=1.0e-10
         call SaveToDisk()
         PrintCounter=0
       endif
 
-      if (abs(iBlck-ClearStep)<1.0e-4) then
-        ! DiffVer=0.0
-        ! Norm=1.0e-10
-        ClearStep=ClearStep*2
+      if (abs(iBlck-AnnealStep)<1.0e-4) then
+        AnnealStep=AnnealStep*2
         CurrIRScale=CurrIRScale/2
       endif
 
@@ -148,7 +144,8 @@ program main
         EffVer(i)=BareCoupling
 
         do j=1, kNum
-          kamp=(j-0.5)*kMax/kNum
+          !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+          kamp=(j-0.5)*DeltaK
           EffGreen(j, i)=1.0/(kamp**2+1.0)
         enddo
       end do
@@ -176,10 +173,17 @@ program main
     double precision function Green(Mom, Scale, g_type)
     !dimensionless green's function
       implicit none
-      double precision :: k2
-      integer :: g_type, Scale
+      double precision :: kk, gg
+      integer :: g_type, Scale, kamp
       double precision, dimension(D) :: Mom
-      k2=sum(Mom**2)+1.0
+      kk=norm2(Mom)
+      if(kk<kMax) then
+        !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+        kamp=int(kk/DeltaK)+1
+        gg=EffGreen(kamp, Scale)
+      else
+        gg=1.0/kk/kk
+      endif
       
       ! if(k2>UVScale/ScaleTable(Scale)) then
       !   Green=0.0
@@ -187,11 +191,17 @@ program main
       ! endif
 
       if(g_type==0) then
-        Green=1.0/k2 
+        Green=gg
       else 
-        Green=-2.0/k2/k2 !dG/dLn\lambda
+        Green=-2.0*gg*gg !dG/dLn\lambda
       endif
+
+      ! if(g_type==0) then
+      !   Green=1.0/(kk*kk+1.0)
+      ! else 
+      !   Green=-2.0/(kk*kk+1.0)/(kk*kk+1.0) !dG/dLn\lambda
       ! endif
+
       return
     end function
     
