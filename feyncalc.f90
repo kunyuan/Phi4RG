@@ -19,8 +19,7 @@ module parameters
   !-- Markov Chain ----------------------------------------------
   double precision                        :: Step        ! a counter to keep track of the current step number
   integer, parameter                      :: UpdateNum=4 ! number of updates
-  double precision, dimension(UpdateNum)  :: PropStep
-  double precision, dimension(UpdateNum)  :: AcceptStep
+  double precision, dimension(UpdateNum)  :: PropStep, AcceptStep
   double precision, dimension(0:MaxOrder) :: ReWeightFactor       !reweightfactor for each order
 
   integer                                 :: CurrOrder, CurrScale, CurrIRScale
@@ -31,9 +30,9 @@ module parameters
   double precision, dimension(D)          :: Mom0 ! values to attach to each loop basis
 
   !--- Measurement ------------------------------------------------
-  double precision, dimension(ScaleNum)       :: ScaleTable(ScaleNum), dScaleTable(ScaleNum)
-  double precision, dimension(ScaleNum)       :: DiffVer(ScaleNum), Norm(ScaleNum)
-  double precision, dimension(ScaleNum)       :: DiffSigma(kNum, ScaleNum), SigmaNorm(ScaleNum)
+  double precision, dimension(ScaleNum)       :: ScaleTable, dScaleTable
+  double precision, dimension(ScaleNum)       :: DiffVer, Norm
+  double precision, dimension(kNum, ScaleNum) :: DiffSigma, SigmaNorm
 
   !-- Diagram Elements  --------------------------------------------
   double precision, dimension(ScaleNum)       :: EffVer(ScaleNum)
