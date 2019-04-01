@@ -20,23 +20,26 @@ module parameters
   double precision                        :: Step        ! a counter to keep track of the current step number
   integer, parameter                      :: UpdateNum=4 ! number of updates
   double precision, dimension(UpdateNum)  :: PropStep, AcceptStep
-  double precision, dimension(0:MaxOrder) :: ReWeightFactor       !reweightfactor for each order
+  double precision, dimension(0:MaxOrder, 2) :: ReWeightFactor       !reweightfactor for each order
 
   integer                                 :: CurrOrder, CurrScale, CurrIRScale
   integer                                 :: CurrType    ! SelfEnergy: 1, Ver4: 2
+  integer                                 :: CurrExtMom  !external momentum for self energy
   double precision                        :: CurrWeight
   double precision, dimension(D, MaxOrder+3)  :: LoopMom ! values to attach to each loop basis
-  integer, dimension(2)                   :: LoopNum !self energy has two ext loops: Order+2, gamma4: Order
+  double precision, dimension(D, kNum)        :: ExtMomMesh ! external momentum
+  integer, dimension(MaxOrder, 2)         :: LoopNum !self energy has two ext loops: Order+2, gamma4: Order
   double precision, dimension(D)          :: Mom0 ! values to attach to each loop basis
 
   !--- Measurement ------------------------------------------------
   double precision, dimension(ScaleNum)       :: ScaleTable, dScaleTable
   double precision, dimension(ScaleNum)       :: DiffVer, VerNorm
-  double precision, dimension(kNum, ScaleNum) :: DiffSigma, SigmaNorm
+  double precision, dimension(kNum, ScaleNum) :: DiffSigma
+  double precision, dimension(ScaleNum)       :: SigmaNorm
 
   !-- Diagram Elements  --------------------------------------------
   double precision, dimension(ScaleNum)             :: EffVer
-  double precision, dimension(kNum, ScaleNum)       :: EffGreen
+  double precision, dimension(kNum, ScaleNum)       :: EffSigma
 
   !-- common parameters and variables ------------------------------
   ! THIS IS PROJECT-INDEPENDENT 
@@ -128,7 +131,8 @@ program main
       integer :: i, j
       double precision :: kamp
   ! For a given order, the bigger factor, the more accurate result 
-      ReWeightFactor(0:2)=(/1.0,1.0,20.0/)
+      ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,20.0/)
+      ReWeightFactor(0:2, SIGMA)=(/1.0,1.0,20.0/)
       Mom0=0.0
 
       PropStep=0.0
@@ -139,29 +143,34 @@ program main
       DiffSigma=0.0
       SigmaNorm=1.0e-10
 
-      CurrType=GAMMA4 !start with gamma4
-      LoopNum(SIGMA)=2
-      LoopNum(GAMMA4)=1
+      LoopNum(1:3, SIGMA)=(/1,2,3/)
+      LoopNum(1:3, GAMMA4)=(/1,2,3/)
 
       do i=1, ScaleNum
         ScaleTable(i)=i*1.0/ScaleNum*UVScale
-        EffVer(i)=BareCoupling
 
-        do j=1, kNum
-          !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-          kamp=(j-0.5)*DeltaK
-          EffGreen(j, i)=1.0/(kamp**2+1.0+Mass2)
-        enddo
       end do
+
+      ExtMomMesh=0.0
+      do j=1, kNum
+        !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+        kamp=(j-0.5)*DeltaK
+        ExtMomMesh(1, j)=kamp
+      enddo
+
+      EffVer=BareCoupling
+      EffSigma=1.0+Mass2
 
       do i=1, ScaleNum-1
         dScaleTable(i)=ScaleTable(i+1)-ScaleTable(i)
       end do
 
+      CurrType=GAMMA4 !start with gamma4
       CurrScale=ScaleNum
-      CurrOrder=0
-      CurrWeight=CalcWeight(CurrOrder)
       CurrIRScale=ScaleNum/2
+      CurrOrder=0
+      CurrExtMom=1
+      CurrWeight=CalcWeight(CurrOrder, CurrType)
     end subroutine
 
     subroutine Test()
@@ -178,13 +187,21 @@ program main
       implicit none
       double precision :: Factor
 
-      Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder)
+      if(CurrIRScale>=CurrScale) return
+
+      Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder, CurrType)
   
-      if(CurrIRScale<CurrScale) then
+      if(CurrType==GAMMA4) then
         if(CurrOrder==0) then
           VerNorm(CurrScale)=VerNorm(CurrScale)+Factor
         else
           DiffVer(CurrScale)=DiffVer(CurrScale)+Factor
+        endif
+      else
+        if(CurrOrder==0) then
+          SigmaNorm(CurrScale)=SigmaNorm(CurrScale)+Factor
+        else
+          DiffSigma(ExtMomMesh(1,CurrExtMom), CurrScale)=DiffSigma(ExtMomMesh(1,CurrExtMom), CurrScale)+Factor
         endif
       endif
       return
@@ -234,17 +251,17 @@ program main
       enddo
     end subroutine
 
-    double precision function CalcWeight(NewOrder)
+    double precision function CalcWeight(NewOrder, Type)
       !calculate the weight for ALL diagrams in a given sector
       implicit none
-      integer :: NewOrder
+      integer :: NewOrder, Type
       if(NewOrder==0) then 
         CalcWeight=1.0
       else if(NewOrder==1) then
         CalcWeight=Ver4_OneLoop(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
       endif
       ! print *, CalcWeight
-      CalcWeight=CalcWeight*ReWeightFactor(NewOrder)
+      CalcWeight=CalcWeight*ReWeightFactor(NewOrder, Type)
       return
     end function CalcWeight
     
@@ -269,7 +286,7 @@ program main
       endif
 
       PropStep(Index)=PropStep(Index)+1.0
-      Weight = CalcWeight(NewOrder)
+      Weight = CalcWeight(NewOrder, CurrType)
       R=abs(Weight)/abs(CurrWeight)*Prop
       if(grnd()<R) then
         AcceptStep(Index)=AcceptStep(Index)+1.0
@@ -300,7 +317,7 @@ program main
 
       PropStep(3) = PropStep(3) + 1.0
 
-      Weight = CalcWeight(CurrOrder)
+      Weight = CalcWeight(CurrOrder, CurrType)
       R = abs(Weight)/abs(CurrWeight)
       if(grnd()<R) then
         AcceptStep(3) = AcceptStep(3)+1.0
@@ -330,7 +347,7 @@ program main
       if(prop<0.0) return
       LoopMom(:,Num)=NewMom
   
-      Weight = CalcWeight(CurrOrder)
+      Weight = CalcWeight(CurrOrder, CurrType)
       R = prop*abs(Weight)/abs(CurrWeight)
   
       if(grnd()<R) then
@@ -436,9 +453,9 @@ program main
       if(kk<kMax) then
         !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
         kamp=int(kk/DeltaK)+1
-        gg=EffGreen(kamp, Scale)
+        gg=1.0/(kk*kk+EffSigma(kamp, Scale))
       else
-        gg=1.0/kk/kk
+        gg=1.0/(kk*kk+EffSigma(kamp, ScaleNum))
       endif
       
       ! if(k2>UVScale/ScaleTable(Scale)) then
