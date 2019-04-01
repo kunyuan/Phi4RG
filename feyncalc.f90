@@ -31,12 +31,12 @@ module parameters
 
   !--- Measurement ------------------------------------------------
   double precision, dimension(ScaleNum)       :: ScaleTable, dScaleTable
-  double precision, dimension(ScaleNum)       :: DiffVer, Norm
+  double precision, dimension(ScaleNum)       :: DiffVer, VerNorm
   double precision, dimension(kNum, ScaleNum) :: DiffSigma, SigmaNorm
 
   !-- Diagram Elements  --------------------------------------------
-  double precision, dimension(ScaleNum)       :: EffVer(ScaleNum)
-  double precision, dimension(ScaleNum)       :: EffGreen(kNum, ScaleNum)
+  double precision, dimension(ScaleNum)             :: EffVer
+  double precision, dimension(kNum, ScaleNum)       :: EffGreen
 
   !-- common parameters and variables ------------------------------
   ! THIS IS PROJECT-INDEPENDENT 
@@ -54,9 +54,8 @@ program main
     use mt19937
     use parameters
     implicit none
-    integer :: PrintCounter, SaveCounter
-    double precision :: TotalStep  !total steps of this MC simulation
-    double precision :: x, AnnealStep, iBlck
+    integer :: iBlck, iInner, AnnealStep, TotalStep
+    double precision :: x
   
     print *, 'mass2, coupling, Order, TotalStep(*1e6), Seed, PID'
     read(*,*) Mass2, BareCoupling, Order, TotalStep, Seed, PID
@@ -71,51 +70,51 @@ program main
   
     call Test() !call test first to make sure all subroutines work as expected
   
-    TotalStep=TotalStep*1.0e6
     AnnealStep=4
-    iBlck=0
+    Step=0.0
     print *, "Start simulation..."
-    do while (Step<TotalStep)
-      Step=Step+1.0
-      x=grnd()
-      if (x<1.0/UpdateNum) then
-        call IncreaseOrder()
-      else if (x<2.0/UpdateNum) then
-        call DecreaseOrder()
-      else if (x<3.0/UpdateNum) then
-        call ChangeScale()
-      else if (x<4.0/UpdateNum) then
-        call ChangeMom()
-      endif
-      !if(mod(int(Step), 4)==0) call Measure()
-      call Measure()
+    do iBlck=1,TotalStep
+      do iInner=1,1000000
+        Step=Step+1.0
+        x=grnd()
+        if (x<1.0/UpdateNum) then
+          call ChangeOrder()
+        else if (x<2.0/UpdateNum) then
+          call ChangeScale()
+        else if (x<3.0/UpdateNum) then
+          call ChangeMom()
+        ! else if (x<4.0/UpdateNum) then
+        !   call ChangeType()
+        endif
+        !if(mod(int(Step), 4)==0) call Measure()
+        call Measure()
+      enddo
 
       ! call DynamicTest()
+      call SolveBetaFunc()
+      if (iBlck==AnnealStep) then
+        AnnealStep=AnnealStep*2
+        CurrIRScale=CurrIRScale/2
+      endif
 
-      PrintCounter=PrintCounter+1
-      if (PrintCounter==1e6)  then
-        iBlck=iBlck+1
-        call SolveBetaFunc()
+      if(mod(iBlck, 10)==0) then
+        !!!!!!!!!!!!  Print Info and Save Data !!!!!!!!!!!!!!!!!!!!!!!
         write(*,*) 
-        write(*,"(f8.2, A15)") Step/1e6, "million steps"
+        print *, iBlck, "million steps"
         write(*,"(A20)") "Accept Ratio: "
         write(*,"(A16, f8.3)") "Increase Order:", AcceptStep(1)/PropStep(1)
         write(*,"(A16, f8.3)") "Decrease Order:", AcceptStep(2)/PropStep(2)
         write(*,"(A16, f8.3)") "Change Scale:", AcceptStep(3)/PropStep(3)
         write(*,"(A16, f8.3)") "Change Mom:", AcceptStep(4)/PropStep(4)
         ! write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
-        write(*, *) "coupling: ", DiffVer/Norm
+        write(*, *) "coupling: ", DiffVer/VerNorm
         write(*, *) "coupling: ", EffVer
       endif
-      if (PrintCounter==1e7)  then
-        call SaveToDisk()
-        PrintCounter=0
-      endif
 
-      if (abs(iBlck-AnnealStep)<1.0e-4) then
-        AnnealStep=AnnealStep*2
-        CurrIRScale=CurrIRScale/2
+      if (mod(iBlck, 100)==10)  then
+        call SaveToDisk()
       endif
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     end do
 
@@ -129,21 +128,19 @@ program main
       integer :: i, j
       double precision :: kamp
   ! For a given order, the bigger factor, the more accurate result 
-      ReWeightFactor(0:2)=(/1.0,10.0,20.0/)
+      ReWeightFactor(0:2)=(/1.0,1.0,20.0/)
       Mom0=0.0
 
       PropStep=0.0
       AcceptStep=0.0
 
-      Step=0.0
-      PrintCounter=0
-      SaveCounter=0
-
       DiffVer=0.0
-      Norm=1.0e-10
+      VerNorm=1.0e-10
+      DiffSigma=0.0
+      SigmaNorm=1.0e-10
 
       CurrType=GAMMA4 !start with gamma4
-      LoopNum(SIGMA)=3
+      LoopNum(SIGMA)=2
       LoopNum(GAMMA4)=1
 
       do i=1, ScaleNum
@@ -185,7 +182,7 @@ program main
   
       if(CurrIRScale<CurrScale) then
         if(CurrOrder==0) then
-          Norm(CurrScale)=Norm(CurrScale)+Factor
+          VerNorm(CurrScale)=VerNorm(CurrScale)+Factor
         else
           DiffVer(CurrScale)=DiffVer(CurrScale)+Factor
         endif
@@ -231,7 +228,7 @@ program main
         end=start-1
         ! print *, start, end, dScaleTable(end), ScaleTable(start)
         ! EffVer(end)=(EffVer(start)*ScaleTable(start)+dScaleTable(start)*DiffVer(start)/Norm)/ScaleTable(end)
-        dg=(-EffVer(start)-DiffVer(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        dg=(-EffVer(start)-DiffVer(start)/VerNorm(start))*dScaleTable(end)/ScaleTable(start)
         ! dg=(-EffVer(start)+3.0/16/pi*EffVer(start)**2)*dScaleTable(end)/ScaleTable(start)
         EffVer(end)=EffVer(start)-dg
       enddo
@@ -251,80 +248,37 @@ program main
       return
     end function CalcWeight
     
-    subroutine IncreaseOrder()
+    subroutine ChangeOrder()
       !increase diagram order by one/change normalization diagram to physical diagram
       implicit none
-      double precision :: R, Weight, Kamp, dK, theta, phi, Prop
-      if (CurrOrder==Order) return
-      PropStep(1)=PropStep(1)+1.0
+      double precision :: R, Weight, Prop
+      integer :: NewOrder, Index
+      if(grnd()<0.5) then
+        ! increase order
+        if (CurrOrder==Order) return
+        Index=1
+        NewOrder=CurrOrder+1
+        call CreateMom(LoopMom(:, CurrOrder+1), Prop)
+        if(Prop<0.0) return
+      else
+        if (CurrOrder==0) return
+        Index=2
+        NewOrder=CurrOrder-1
+        call RemoveMom(LoopMom(:, CurrOrder), Prop)
+        if(Prop<0.0) return
+      endif
 
-      ! Generate New Mom
-      !!!! Hard way  !!!!!!!!!!!!!!!!!!!!!!!!!!
-      dK=2.0
-      Kamp=grnd()*dK
-      if(Kamp<=0.0) return
-      phi=2.0*pi*grnd()
-      theta=pi*grnd()
-      if(theta==0.0) return
-      LoopMom(1, CurrOrder+1)=Kamp*sin(theta)*cos(phi)
-      LoopMom(2, CurrOrder+1)=Kamp*sin(theta)*sin(phi)
-      LoopMom(3, CurrOrder+1)=Kamp*cos(theta)
-      Prop=dK*2.0*pi*pi*sin(theta)*Kamp**(D-1)
-
-      !!! Simple way  !!!!!!!!!!!!!!!!!!!!!!!!!!
-      ! do i=1, D
-      !   NewMom(i)=kF*(grnd()-0.5)*2
-      ! enddo
-      ! Prop=Beta*(2.0*kF)**D
-      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-      Weight = CalcWeight(CurrOrder+1)
-
+      PropStep(Index)=PropStep(Index)+1.0
+      Weight = CalcWeight(NewOrder)
       R=abs(Weight)/abs(CurrWeight)*Prop
       if(grnd()<R) then
-        AcceptStep(1)=AcceptStep(1)+1.0
+        AcceptStep(Index)=AcceptStep(Index)+1.0
         CurrWeight=Weight
-        CurrOrder=CurrOrder+1
+        CurrOrder=NewOrder
       endif
       return
     end subroutine
   
-    subroutine DecreaseOrder()
-    !decrease diagram order by one/change physical diagram to normalization diagram
-      implicit none
-      double precision :: R, Weight, Prop
-      double precision :: Kamp, dK, SinTheta
-      if (CurrOrder==0) return
-      !if the current diagrams are already in normalization sector, then return
-
-      !Get proper K proposed probability
-      !!!!!!! Hard way !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      dK=2.0
-      Kamp=norm2(LoopMom(:, CurrOrder))
-      if(Kamp<=0.0 .or. Kamp>=dK) return
-      SinTheta=norm2(LoopMom(1:2, CurrOrder))/Kamp
-      if(SinTheta==0.0) return
-      Prop=1.0/(dK*2.0*pi*pi*SinTheta*Kamp**(D-1))
-
-      !!!!!!! Simple way !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      ! do i=1, D
-      !   if(abs(LoopMom(i, LoopNum(CurrOrder)))>kF) return
-      ! enddo
-      ! Prop=1.0/(Beta*(2.0*kF)**D)
-      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-      PropStep(2)=PropStep(2)+1.0
-      Weight = CalcWeight(CurrOrder-1)
-      R=abs(Weight)/abs(CurrWeight)*Prop
-      ! print *, R, Weight, CurrWeight, Prop
-      if(grnd()<R) then
-        AcceptStep(2)=AcceptStep(2)+1.0
-        CurrWeight=Weight
-        CurrOrder=CurrOrder-1
-      endif
-      return
-    end subroutine
-
     subroutine ChangeScale()
       implicit none
       !TODO: don't forget to change all LoopMom with scale!
@@ -332,16 +286,12 @@ program main
       double precision :: Weight
       double precision :: R
 
-      ! if(CurrOrder==0) return
-      
       OldScale=CurrScale
       if(grnd()<0.5) then
         CurrScale=CurrScale-1
       else
         CurrScale=CurrScale+1
       endif
-
-      ! print *, CurrScale
 
       if(CurrScale<1 .or. CurrScale>ScaleNum) then
         CurrScale=OldScale
@@ -352,8 +302,6 @@ program main
 
       Weight = CalcWeight(CurrOrder)
       R = abs(Weight)/abs(CurrWeight)
-      ! print *, R, Weight, CurrWeight
-  
       if(grnd()<R) then
         AcceptStep(3) = AcceptStep(3)+1.0
         CurrWeight = Weight
@@ -377,7 +325,7 @@ program main
       PropStep(4) = PropStep(4) + 1.0
       OldMom = LoopMom(:, Num)
   
-      call GenerateNewMom(OldMom, NewMom, prop)
+      call ShiftMom(OldMom, NewMom, prop)
   
       if(prop<0.0) return
       LoopMom(:,Num)=NewMom
@@ -396,8 +344,56 @@ program main
       return
     end subroutine
 
+    subroutine CreateMom(New, Prop)
+      implicit none 
+      double precision, dimension(D) :: New
+      double precision :: Prop, dK, Kamp, theta, phi
+      !!!! the Hard way  !!!!!!!!!!!!!!!!!!!!!!!!!!
+      dK=2.0
+      Kamp=grnd()*dK
+      Prop=-1.0
+      if(Kamp<=0.0) return
+      phi=2.0*pi*grnd()
+      theta=pi*grnd()
+      if(theta==0.0) return
+      New(1)=Kamp*sin(theta)*cos(phi)
+      New(2)=Kamp*sin(theta)*sin(phi)
+      New(3)=Kamp*cos(theta)
+      Prop=dK*2.0*pi*pi*sin(theta)*Kamp**(D-1)
+
+      !!! Simple way  !!!!!!!!!!!!!!!!!!!!!!!!!!
+      ! do i=1, D
+      !   NewMom(i)=kF*(grnd()-0.5)*2
+      ! enddo
+      ! Prop=Beta*(2.0*kF)**D
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    end subroutine
+
+    subroutine RemoveMom(Old, Prop)
+      implicit none
+      double precision, dimension(D) :: Old
+      double precision :: Prop, dK, Kamp, SinTheta
+      !Get proper K proposed probability
+      !!!!!!! Hard way !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      dK=2.0
+      Kamp=norm2(Old)
+      Prop=-1.0
+      if(Kamp<=0.0 .or. Kamp>=dK) return
+      SinTheta=norm2(Old(1:2))/Kamp
+      if(SinTheta==0.0) return
+      Prop=1.0/(dK*2.0*pi*pi*SinTheta*Kamp**(D-1))
+
+      !!!!!!! Simple way !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      ! do i=1, D
+      !   if(abs(LoopMom(i, LoopNum(CurrOrder)))>kF) return
+      ! enddo
+      ! Prop=1.0/(Beta*(2.0*kF)**D)
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    end subroutine
+
     
-    subroutine GenerateNewMom(old, new, prop)
+    subroutine ShiftMom(old, new, prop)
       implicit none
       double precision, dimension(D) :: old, new
       integer :: Num
