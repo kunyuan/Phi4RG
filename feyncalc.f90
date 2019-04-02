@@ -201,7 +201,7 @@ program main
         if(CurrOrder==0) then
           SigmaNorm(CurrScale)=SigmaNorm(CurrScale)+Factor
         else
-          DiffSigma(ExtMomMesh(1,CurrExtMom), CurrScale)=DiffSigma(ExtMomMesh(1,CurrExtMom), CurrScale)+Factor
+          DiffSigma(CurrExtMom, CurrScale)=DiffSigma(CurrExtMom, CurrScale)+Factor
         endif
       endif
       return
@@ -257,8 +257,16 @@ program main
       integer :: NewOrder, Type
       if(NewOrder==0) then 
         CalcWeight=1.0
-      else if(NewOrder==1) then
-        CalcWeight=Ver4_OneLoop(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
+      else
+        if(Type==GAMMA4) then
+          !4-vertex
+          if(NewOrder==1) then
+            CalcWeight=Ver4_OneLoop(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
+          endif
+        else
+          ! Sigma
+          CalcWeight=Sigma_OneLoop(0, ExtMomMesh(:, CurrExtMom), 1)
+        endif
       endif
       ! print *, CalcWeight
       CalcWeight=CalcWeight*ReWeightFactor(NewOrder, Type)
@@ -503,5 +511,16 @@ program main
         return
       endif
     end function
-    
+
+    double precision function Sigma_OneLoop(VerOrder, ExtK, InterMomIndex)
+      implicit none
+      integer :: VerOrder, InterMomIndex
+      double precision, dimension (D) :: ExtK, Mom
+      double precision :: VerWeight, Weight
+      if(VerOrder==0) VerWeight=EffVer(CurrScale)
+      Mom=LoopMom(:, InterMomIndex)
+      Weight=1.0/2*Green(ExtK, CurrScale, 1)
+      Sigma_OneLoop=Weight/(2.0*pi)**D
+      return
+    end function
 end program main
