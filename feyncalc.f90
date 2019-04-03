@@ -18,7 +18,7 @@ module parameters
 
   !-- Markov Chain ----------------------------------------------
   double precision                        :: Step        ! a counter to keep track of the current step number
-  integer, parameter                      :: UpdateNum=4 ! number of updates
+  integer, parameter                      :: UpdateNum=7 ! number of updates
   double precision, dimension(UpdateNum)  :: PropStep, AcceptStep
   double precision, dimension(0:MaxOrder, 2) :: ReWeightFactor       !reweightfactor for each order
 
@@ -33,13 +33,15 @@ module parameters
 
   !--- Measurement ------------------------------------------------
   double precision, dimension(ScaleNum)       :: ScaleTable, dScaleTable
-  double precision, dimension(ScaleNum)       :: DiffVer, VerNorm
-  double precision, dimension(kNum, ScaleNum) :: DiffSigma
-  double precision, dimension(ScaleNum)       :: SigmaNorm
+  double precision, dimension(ScaleNum)       :: DiffVer
+  double precision, dimension(kNum, ScaleNum) :: DiffSigma !the subleading correction of sigma
+  double precision, dimension(ScaleNum)       :: DiffMu  !the leading order correction of sigma
+  double precision, dimension(ScaleNum)       :: Norm
 
   !-- Diagram Elements  --------------------------------------------
-  double precision, dimension(ScaleNum)             :: EffVer
-  double precision, dimension(kNum, ScaleNum)       :: EffSigma
+  double precision, dimension(ScaleNum)       :: EffVer
+  double precision, dimension(kNum, ScaleNum) :: EffSigma
+  double precision, dimension(ScaleNum)       :: EffMu
 
   !-- common parameters and variables ------------------------------
   ! THIS IS PROJECT-INDEPENDENT 
@@ -86,15 +88,19 @@ program main
           call ChangeScale()
         else if (x<3.0/UpdateNum) then
           call ChangeMom()
-        ! else if (x<4.0/UpdateNum) then
-        !   call ChangeType()
+        else if (x<4.0/UpdateNum) then
+          call ChangeType()
+        ! else if (x<5.0/UpdateNum) then
+        !   call ChangeExtMom()
         endif
         !if(mod(int(Step), 4)==0) call Measure()
         call Measure()
+
       enddo
 
       ! call DynamicTest()
       call SolveBetaFunc()
+
       if (iBlck==AnnealStep) then
         AnnealStep=AnnealStep*2
         CurrIRScale=CurrIRScale/2
@@ -109,9 +115,14 @@ program main
         write(*,"(A16, f8.3)") "Decrease Order:", AcceptStep(2)/PropStep(2)
         write(*,"(A16, f8.3)") "Change Scale:", AcceptStep(3)/PropStep(3)
         write(*,"(A16, f8.3)") "Change Mom:", AcceptStep(4)/PropStep(4)
+        write(*,"(A16, f8.3)") "Gamma4->Sigma:", AcceptStep(5)/PropStep(5)
+        write(*,"(A16, f8.3)") "Sigma->Gamma4:", AcceptStep(6)/PropStep(6)
+        ! write(*,"(A16, f8.3)") "Change ExtK:", AcceptStep(7)/PropStep(7)
         ! write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
-        write(*, *) "coupling: ", DiffVer/VerNorm
         write(*, *) "coupling: ", EffVer
+        ! write(*, *) "coupling: ", DiffVer/Norm
+        ! write(*, *) "mu: ", DiffMu/Norm
+        write(*, *) "mu: ", EffMu
       endif
 
       if (mod(iBlck, 100)==10)  then
@@ -132,16 +143,16 @@ program main
       double precision :: kamp
   ! For a given order, the bigger factor, the more accurate result 
       ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,20.0/)
-      ReWeightFactor(0:2, SIGMA)=(/1.0,1.0,20.0/)
+      ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,20.0/)
       Mom0=0.0
 
       PropStep=0.0
       AcceptStep=0.0
 
       DiffVer=0.0
-      VerNorm=1.0e-10
       DiffSigma=0.0
-      SigmaNorm=1.0e-10
+      DiffMu=0.0
+      Norm=1.0e-10
 
       LoopNum(1:3, SIGMA)=(/1,2,3/)
       LoopNum(1:3, GAMMA4)=(/1,2,3/)
@@ -159,7 +170,8 @@ program main
       enddo
 
       EffVer=BareCoupling
-      EffSigma=1.0+Mass2
+      EffSigma=0.0
+      EffMu=Mass2
 
       do i=1, ScaleNum-1
         dScaleTable(i)=ScaleTable(i+1)-ScaleTable(i)
@@ -190,18 +202,17 @@ program main
       if(CurrIRScale>=CurrScale) return
 
       Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder, CurrType)
-  
-      if(CurrType==GAMMA4) then
-        if(CurrOrder==0) then
-          VerNorm(CurrScale)=VerNorm(CurrScale)+Factor
-        else
-          DiffVer(CurrScale)=DiffVer(CurrScale)+Factor
-        endif
+      if(CurrOrder==0) then
+          Norm(CurrScale)=Norm(CurrScale)+Factor
       else
-        if(CurrOrder==0) then
-          SigmaNorm(CurrScale)=SigmaNorm(CurrScale)+Factor
+        if(CurrType==GAMMA4) then
+            DiffVer(CurrScale)=DiffVer(CurrScale)+Factor
         else
-          DiffSigma(CurrExtMom, CurrScale)=DiffSigma(CurrExtMom, CurrScale)+Factor
+          if(CurrOrder==1) then
+            DiffMu(CurrScale)=DiffMu(CurrScale)+Factor
+          else
+            DiffSigma(CurrExtMom, CurrScale)=DiffSigma(CurrExtMom, CurrScale)+Factor
+          endif
         endif
       endif
       return
@@ -239,15 +250,20 @@ program main
     subroutine SolveBetaFunc()
       implicit none
       integer :: i, start, end
-      double precision :: dg
+      double precision :: dg, dMu
       do i=1, ScaleNum-1
         start=ScaleNum-i+1
         end=start-1
         ! print *, start, end, dScaleTable(end), ScaleTable(start)
+        !!!!!!!!!!!!!!!!  4-Vertex Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! EffVer(end)=(EffVer(start)*ScaleTable(start)+dScaleTable(start)*DiffVer(start)/Norm)/ScaleTable(end)
-        dg=(-EffVer(start)-DiffVer(start)/VerNorm(start))*dScaleTable(end)/ScaleTable(start)
-        ! dg=(-EffVer(start)+3.0/16/pi*EffVer(start)**2)*dScaleTable(end)/ScaleTable(start)
-        EffVer(end)=EffVer(start)-dg
+        dg=(EffVer(start)+DiffVer(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        EffVer(end)=EffVer(start)+dg
+
+        !!!!!!!!!!!!!!!!!!!  Sigma Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        dMu=(2.0*EffMu(start)+DiffMu(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        ! print *, EffMu(start), dMu
+        EffMu(end)=EffMu(start)+dMu
       enddo
     end subroutine
 
@@ -278,6 +294,8 @@ program main
       implicit none
       double precision :: R, Weight, Prop
       integer :: NewOrder, Index
+      if(CurrType==SIGMA) return
+
       if(grnd()<0.5) then
         ! increase order
         if (CurrOrder==Order) return
@@ -300,6 +318,7 @@ program main
         AcceptStep(Index)=AcceptStep(Index)+1.0
         CurrWeight=Weight
         CurrOrder=NewOrder
+        CurrType=GAMMA4
       endif
       return
     end subroutine
@@ -341,9 +360,8 @@ program main
       !randomly choose a vertex, change the space variable
       implicit none
       double precision, dimension(D) :: NewMom, OldMom
-      double precision :: prop, R
-      integer :: Num, i, j
-      double precision :: Weight
+      double precision :: prop, R, Weight
+      integer :: Num
   
       Num = int( CurrOrder*grnd() ) + 1
   
@@ -361,9 +379,86 @@ program main
       if(grnd()<R) then
         AcceptStep(4) = AcceptStep(4)+1.0
         CurrWeight = Weight
-        ! call UpdateState()
       else
         LoopMom(:,Num)=OldMom
+      endif
+  
+      return
+    end subroutine
+
+    subroutine ChangeType()
+      implicit none
+      integer :: OldType, Index
+      double precision :: Weight, prop, R
+
+      if (CurrOrder==0) return
+
+      OldType=CurrType
+      if(CurrType==GAMMA4) then
+        Index=5
+        CurrType=SIGMA
+        ! CurrExtMom=int(grnd()*ScaleTable(CurrScale)/DeltaK)+1
+        ! CurrExtMom=int(ScaleNum/2)+1
+        ! prop=ScaleNum*2
+        CurrExtMom=1
+      else
+        Index=6
+        CurrType=GAMMA4
+        ! if(CurrExtMom>=int(ScaleTable(CurrScale)/DeltaK)+1) return
+        ! if(CurrExtMom>=int(ScaleNum/2)+1) return
+        ! prop=1.0/ScaleNum/2
+      endif
+
+      prop=1.0
+      PropStep(Index) = PropStep(Index) + 1.0
+      Weight = CalcWeight(CurrOrder, CurrType)
+      R = prop*abs(Weight)/abs(CurrWeight)
+
+      ! if(Index==5)  then
+      !   print *, Weight, CurrWeight, R
+      !   print *, 
+      !   stop
+      ! endif
+  
+      if(grnd()<R) then
+        AcceptStep(Index) = AcceptStep(Index)+1.0
+        CurrWeight = Weight
+      else
+        CurrType=OldType
+      endif
+      return
+    end subroutine
+
+    subroutine ChangeExtMom()
+      !randomly choose a vertex, change the space variable
+      implicit none
+      double precision :: prop, R, Weight
+      integer :: OldExtMom
+      integer, parameter :: Delta=3
+
+      if(CurrType==GAMMA4) return
+  
+      OldExtMom=CurrExtMom
+      if(grnd()<0.5) then
+        CurrExtMom=CurrExtMom+int(grnd()*Delta)
+      else
+        CurrExtMom=CurrExtMom-int(grnd()*Delta)
+      endif
+      if(CurrExtMom>kMax .or. CurrExtMom<1) then
+        CurrExtMom=OldExtMom
+        return
+      endif
+  
+      PropStep(7) = PropStep(7) + 1.0
+      Weight = CalcWeight(CurrOrder, CurrType)
+      R = prop*abs(Weight)/abs(CurrWeight)
+  
+      if(grnd()<R) then
+        AcceptStep(7) = AcceptStep(7)+1.0
+        CurrWeight = Weight
+        ! call UpdateState()
+      else
+        CurrExtMom=OldExtMom
       endif
   
       return
@@ -461,9 +556,10 @@ program main
       if(kk<kMax) then
         !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
         kamp=int(kk/DeltaK)+1
-        gg=1.0/(kk*kk+EffSigma(kamp, Scale))
+        ! gg=1.0/(kk*kk+EffMu(Scale)+1.0+EffSigma(kamp, Scale))
+        gg=1.0/(kk*kk+1.0+EffSigma(kamp, Scale))
       else
-        gg=1.0/(kk*kk+EffSigma(kamp, ScaleNum))
+        gg=1.0/(kk*kk+1.0+EffSigma(kamp, ScaleNum))
       endif
       
       ! if(k2>UVScale/ScaleTable(Scale)) then
@@ -519,7 +615,7 @@ program main
       double precision :: VerWeight, Weight
       if(VerOrder==0) VerWeight=EffVer(CurrScale)
       Mom=LoopMom(:, InterMomIndex)
-      Weight=1.0/2*Green(ExtK, CurrScale, 1)
+      Weight=0.5*Green(Mom, CurrScale, 1)*VerWeight
       Sigma_OneLoop=Weight/(2.0*pi)**D
       return
     end function
