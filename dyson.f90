@@ -97,9 +97,11 @@ program main
       ! call DynamicTest()
       call SolveDSE()
 
-      if (iBlck==AnnealStep) then
-        AnnealStep=AnnealStep*2
-        CurrIRScale=CurrIRScale/2
+      if (iBlck>=AnnealStep) then
+        AnnealStep=int(AnnealStep*1.5)
+        if(CurrIRScale>0.1) then
+          CurrIRScale=CurrIRScale/1.5
+        endif
       endif
 
       if(mod(iBlck, 10)==0) then
@@ -114,6 +116,7 @@ program main
         write(*,"(A16, f8.3)") "Sigma->Gamma4:", AcceptStep(5)/PropStep(5)
         ! write(*,"(A16, f8.3)") "Change ExtK:", AcceptStep(6)/PropStep(6)
         ! write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
+        write(*,*) "IR Scale:", CurrIRScale
         write(*, *) "coupling: ", EffVer
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
@@ -141,7 +144,7 @@ program main
       ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,20.0/)
       Mom0=0.0
 
-      PropStep=0.0
+      PropStep=1.0e-10
       AcceptStep=0.0
 
       DiffVer=0.0
@@ -151,11 +154,6 @@ program main
 
       LoopNum(1:3, SIGMA)=(/1,2,3/)
       LoopNum(1:3, GAMMA4)=(/1,2,3/)
-
-      do i=1, ScaleNum
-        ScaleTable(i)=i*1.0/ScaleNum*UVScale
-
-      end do
 
       ExtMomMesh=0.0
       do j=1, kNum
@@ -169,7 +167,7 @@ program main
       EffMu=Mass2
 
       CurrType=GAMMA4 !start with gamma4
-      CurrIRScale=0.0
+      CurrIRScale=UVScale/2.0
       CurrOrder=0
       CurrExtMom=1
       CurrWeight=CalcWeight(CurrOrder, CurrType)
@@ -240,7 +238,7 @@ program main
       integer :: i, start, end
       double precision :: dg, dMu
 
-      EffVer=BareCoupling+DiffVer/Norm
+      EffVer=(BareCoupling-DiffVer/Norm)*UVScale/CurrIRScale
       EffMu=DiffMu/Norm
 
     end subroutine
@@ -310,7 +308,7 @@ program main
   
       Num = int( CurrOrder*grnd() ) + 1
   
-      PropStep(4) = PropStep(4) + 1.0
+      PropStep(3) = PropStep(3) + 1.0
       OldMom = LoopMom(:, Num)
   
       call ShiftMom(OldMom, NewMom, prop)
@@ -320,6 +318,8 @@ program main
   
       Weight = CalcWeight(CurrOrder, CurrType)
       R = prop*abs(Weight)/abs(CurrWeight)
+
+      ! print *, R, Weight, CurrWeight
   
       if(grnd()<R) then
         AcceptStep(3) = AcceptStep(3)+1.0
@@ -488,23 +488,26 @@ program main
     double precision function Green(Mom, IRScale, g_type)
     !dimensionless green's function
       implicit none
-      double precision :: kk, gg
-      integer :: g_type, IRScale, kamp
+      double precision :: kk, gg, IRScale
+      integer :: g_type, kamp
       double precision, dimension(D) :: Mom
+
       kk=norm2(Mom)
+
+      ! if(kk>UVScale) then
+      !   Green=0.0
+      !   return
+      ! endif
+
       if(kk<kMax) then
         !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
         kamp=int(kk/DeltaK)+1
         ! gg=1.0/(kk*kk+EffMu(Scale)+1.0+EffSigma(kamp, Scale))
-        gg=1.0/(kk*kk+IRScale**2+EffSigma(kamp))
+        gg=1.0/(kk*kk+1.0+EffSigma(kamp))
       else
-        gg=1.0/(kk*kk+IRScale**2+EffSigma(kamp))
+        gg=1.0/(kk*kk+1.0+EffSigma(kamp))
       endif
       
-      ! if(k2>UVScale/ScaleTable(Scale)) then
-      !   Green=0.0
-      !   return
-      ! endif
 
       if(g_type==0) then
         Green=gg
@@ -550,7 +553,7 @@ program main
       Mom=LoopMom(:, InterMomIndex)
       UWeight=LWeight*RWeight*Green(MomL1-MomL2+Mom, CurrIRScale, 0)*Green(Mom, CurrIRScale, 0)
       if(Simple .eqv. .true.) then
-        Ver4_OneLoop=UWeight*3.0/(2.0*pi)**D
+        Ver4_OneLoop=UWeight*3.0/(2.0*pi)**D/2.0
         return
       endif
     end function
@@ -560,10 +563,11 @@ program main
       integer :: VerOrder, InterMomIndex
       double precision, dimension (D) :: ExtK, Mom
       double precision :: VerWeight, Weight
-      if(VerOrder==0) VerWeight=EffVer
-      Mom=LoopMom(:, InterMomIndex)
-      Weight=0.5*Green(Mom, CurrIRScale, 0)*VerWeight
-      Sigma_OneLoop=Weight/(2.0*pi)**D
+      Sigma_OneLoop=0.0
+      ! if(VerOrder==0) VerWeight=EffVer
+      ! Mom=LoopMom(:, InterMomIndex)
+      ! Weight=0.5*Green(Mom, CurrIRScale, 0)*VerWeight
+      ! Sigma_OneLoop=Weight/(2.0*pi)**D
       return
     end function
 end program main
