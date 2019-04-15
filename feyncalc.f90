@@ -91,8 +91,8 @@ program main
           call ChangeMom()
         else if (x<4.0/UpdateNum) then
           call ChangeType()
-        ! else if (x<5.0/UpdateNum) then
-        !   call ChangeExtMom()
+        else if (x<5.0/UpdateNum) then
+          call ChangeExtMom()
         endif
         !if(mod(int(Step), 4)==0) call Measure()
         call Measure()
@@ -254,6 +254,7 @@ program main
       implicit none
       integer :: i, start, end
       double precision :: dg, dMu
+      double precision, dimension(kNum) :: dSigma
       do i=1, ScaleNum-1
         start=ScaleNum-i+1
         end=start-1
@@ -267,6 +268,8 @@ program main
         dMu=(2.0*EffMu(start)+DiffMu(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         ! print *, EffMu(start), dMu
         EffMu(end)=EffMu(start)+dMu
+
+        ! dSigma(:)=(2.0*EffSigma(:, )+DiffSigma(start)/Norm(start))
       enddo
     end subroutine
 
@@ -281,10 +284,16 @@ program main
           !4-vertex
           if(NewOrder==1) then
             CalcWeight=Ver4_OneLoop(0, 0, Mom0, Mom0, Mom0, Mom0, 1, .true.)
+          else if(NewOrder==2) then
+            CalcWeight=Ver4_TwoLoop(1)
           endif
         else
           ! Sigma
-          CalcWeight=Sigma_OneLoop(0, ExtMomMesh(:, CurrExtMom), 1)
+          if(NewOrder==1) then
+            CalcWeight=Sigma_OneLoop(0, ExtMomMesh(:, CurrExtMom), 1)
+          else if(NewOrder==2) then
+            CalcWeight=Sigma_TwoLoop(ExtMomMesh(:, CurrExtMom), 1)
+          endif
         endif
       endif
       ! print *, CalcWeight
@@ -611,6 +620,21 @@ program main
       endif
     end function
 
+    double precision function Ver4_TwoLoop(InterMomIndex)
+      implicit none
+      double precision, dimension(D) :: Mom1, Mom2
+      integer :: InterMomIndex
+      double precision :: UWeight, G1, G2, G3, G4
+      Mom1=LoopMom(:, InterMomIndex)
+      Mom2=LoopMom(:, InterMomIndex+1)
+      G1=Green(Mom1, CurrScale, 1)
+      G2=Green(Mom1, CurrScale, 0)
+      G3=Green(Mom2, CurrScale, 0)
+      G4=Green(Mom1+Mom2, CurrScale, 0)
+      UWeight=G1*G3*(G4*G2+G4*G3-G2*G3)*EffVer(CurrScale)**3
+      Ver4_TwoLoop=UWeight*6.0/(2.0*pi)**(2.0*D)
+    end function
+
     double precision function Sigma_OneLoop(VerOrder, ExtK, InterMomIndex)
       implicit none
       integer :: VerOrder, InterMomIndex
@@ -625,5 +649,21 @@ program main
         Sigma_OneLoop=Weight/(2.0*pi)**D
       endif
       return
+    end function
+
+    double precision function Sigma_TwoLoop(ExtK, InterMomIndex)
+      implicit none
+      integer :: InterMomIndex
+      double precision, dimension (D) :: ExtK, Mom1, Mom2
+      double precision :: Weight, G1, G2, G3
+      Mom1=LoopMom(:, InterMomIndex)
+      Mom2=LoopMom(:, InterMomIndex+1)
+      G1=Green(Mom1, CurrScale, 1)
+      G2=Green(Mom2, CurrScale, 0)
+      G3=Green(Mom1+Mom2-ExtK, CurrScale, 0)
+      Weight=-0.5*G1*(G2*G3-G2*G2)
+      !if IsCritical is true, then one should subtract Sigma(ExtK=0).
+      !however, it is easy to see Sigma_TwoLoop(ExtK=0) is automatically zero!
+      Sigma_TwoLoop=Weight/(2.0*pi)**(2*D)
     end function
 end program main
