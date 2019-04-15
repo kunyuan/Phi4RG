@@ -9,6 +9,7 @@ module parameters
   double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
   integer, parameter          :: SIGMA=1, GAMMA4=2
+  logical, parameter          :: IsCritical=.true.
 
   integer            :: PID           ! the ID of this job
   integer            :: Order
@@ -122,7 +123,7 @@ program main
         write(*, *) "coupling: ", EffVer
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
-        write(*, *) "mu: ", EffMu
+        ! write(*, *) "mu: ", EffMu
       endif
 
       if (mod(iBlck, 100)==10)  then
@@ -171,11 +172,13 @@ program main
 
       EffVer=BareCoupling
       EffSigma=0.0
+      if(IsCritical) Mass2=0.0
       EffMu=Mass2
 
       do i=1, ScaleNum-1
         dScaleTable(i)=ScaleTable(i+1)-ScaleTable(i)
       end do
+
 
       CurrType=GAMMA4 !start with gamma4
       CurrScale=ScaleNum
@@ -613,10 +616,14 @@ program main
       integer :: VerOrder, InterMomIndex
       double precision, dimension (D) :: ExtK, Mom
       double precision :: VerWeight, Weight
-      if(VerOrder==0) VerWeight=EffVer(CurrScale)
-      Mom=LoopMom(:, InterMomIndex)
-      Weight=0.5*Green(Mom, CurrScale, 1)*VerWeight
-      Sigma_OneLoop=Weight/(2.0*pi)**D
+      if(IsCritical .eqv. .true.)  then
+        Sigma_OneLoop=0.0
+      else
+        if(VerOrder==0) VerWeight=EffVer(CurrScale)
+        Mom=LoopMom(:, InterMomIndex)
+        Weight=0.5*Green(Mom, CurrScale, 1)*VerWeight
+        Sigma_OneLoop=Weight/(2.0*pi)**D
+      endif
       return
     end function
 end program main
