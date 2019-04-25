@@ -88,10 +88,10 @@ program main
           call ChangeScale()
         else if (x<3.0/UpdateNum) then
           call ChangeMom()
-        else if (x<4.0/UpdateNum) then
-          call ChangeType()
-        else if (x<5.0/UpdateNum) then
-          call ChangeExtMom()
+        ! else if (x<4.0/UpdateNum) then
+          ! call ChangeType()
+        ! else if (x<5.0/UpdateNum) then
+          ! call ChangeExtMom()
         endif
         !if(mod(int(Step), 4)==0) call Measure()
         call Measure()
@@ -99,7 +99,7 @@ program main
       enddo
 
       ! call DynamicTest()
-      call SolveBetaFunc()
+      ! call SolveBetaFunc()
 
       if (iBlck==AnnealStep) then
         AnnealStep=AnnealStep*2
@@ -118,9 +118,10 @@ program main
         write(*,"(A16, f8.3)") "Gamma4->Sigma:", AcceptStep(5)/PropStep(5)
         write(*,"(A16, f8.3)") "Sigma->Gamma4:", AcceptStep(6)/PropStep(6)
         ! write(*,"(A16, f8.3)") "Change ExtK:", AcceptStep(7)/PropStep(7)
-        ! write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
         write(*,*) "Current Order: ", CurrOrder
-        write(*, *) "coupling: ", EffVer
+        write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
+        write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
+        ! write(*, *) "coupling: ", EffVer
         ! write(*, *) "self energy: ", DiffSigma(:, ScaleNum/2, 2)
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
@@ -266,7 +267,7 @@ program main
         ! print *, start, end, dScaleTable(end), ScaleTable(start)
         !!!!!!!!!!!!!!!!  4-Vertex Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! EffVer(end)=(EffVer(start)*ScaleTable(start)+dScaleTable(start)*DiffVer(start)/Norm)/ScaleTable(end)
-        dg=(EffVer(start)+sum(DiffVer(start, :))/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        dg=(EffVer(start)-sum(DiffVer(start, :))/Norm(start))*dScaleTable(end)/ScaleTable(start)
         ! dg=(EffVer(start)+DiffVer(start, 1)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         EffVer(end)=EffVer(start)+dg
 
@@ -578,16 +579,17 @@ program main
       kk=norm2(Mom)
       realKK=kk*ScaleTable(Scale)
 
-      if(realKK>UVScale) then
-        Green=0.0
-        return
-      endif
+      ! if(realKK>UVScale) then
+      !   Green=0.0
+      !   return
+      ! endif
 
       ! if(kk<kMax) then
       !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
       kamp=int(realKK/DeltaK)+1
       ! gg=1.0/(kk*kk+EffMu(Scale)+1.0+EffSigma(kamp, Scale))
-      gg=1.0/(kk*kk+1.0+EffSigma(kamp, Scale)-EffMu(Scale))
+      ! gg=1.0/(kk*kk+1.0+EffSigma(kamp, Scale)-EffMu(Scale))
+      gg=1.0/(kk*kk+1.0)
 
       ! else
         ! gg=1.0/(kk*kk+1.0+EffSigma(kamp, ScaleNum))
@@ -630,7 +632,7 @@ program main
       Mom=LoopMom(:, InterMomIndex)
       UWeight=LWeight*RWeight*Green(MomL1-MomL2+Mom, CurrScale, 1)*Green(Mom, CurrScale, 0)
       if(Simple .eqv. .true.) then
-        Ver4_OneLoop=UWeight*3.0/(2.0*pi)**D
+        Ver4_OneLoop=-3.0*UWeight/(2.0*pi)**D
         return
       endif
     end function
@@ -639,15 +641,16 @@ program main
       implicit none
       double precision, dimension(D) :: Mom1, Mom2
       integer :: InterMomIndex
-      double precision :: UWeight, G1, G2, G3, G4
+      double precision :: UWeight, G1p, G2, G3, G4
       Mom1=LoopMom(:, InterMomIndex)
       Mom2=LoopMom(:, InterMomIndex+1)
-      G1=Green(Mom1, CurrScale, 1)
+      G1p=Green(Mom1, CurrScale, 1)  !dG/d\Lambda
       G2=Green(Mom1, CurrScale, 0)
       G3=Green(Mom2, CurrScale, 0)
       G4=Green(Mom1+Mom2, CurrScale, 0)
-      UWeight=G1*G3*(G4*G2+G4*G3-G2*G3)*EffVer(CurrScale)**3
-      Ver4_TwoLoop=UWeight*6.0/(2.0*pi)**(2.0*D)
+      UWeight=G1p*G3*(G4*G2+G4*G3-G2*G3)*EffVer(CurrScale)**3
+      ! UWeight=G1p*G3*(-G2*G3)*EffVer(CurrScale)**3
+      Ver4_TwoLoop=6.0*UWeight/(2.0*pi)**(2.0*D)
     end function
 
     double precision function Sigma_OneLoop(VerOrder, ExtK, InterMomIndex)
