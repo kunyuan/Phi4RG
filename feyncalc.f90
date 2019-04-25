@@ -3,10 +3,10 @@ module parameters
   !-- Parameters -------------------------------------------------
   integer, parameter :: D=3           !D=2 or D=3  
   integer, parameter :: ScaleNum=64    !number of scales
-  integer, parameter :: kNum=512       !k bins of Green's function
-  double precision, parameter :: kMax=8.0
-  double precision, parameter :: DeltaK=kMax/kNum
+  integer, parameter :: kNum=256       !k bins of Green's function
+  ! double precision, parameter :: kMax=8.0
   double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
+  double precision, parameter :: DeltaK=UVScale/kNum
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
   integer, parameter          :: SIGMA=1, GAMMA4=2
   logical, parameter          :: IsCritical=.true.
@@ -34,9 +34,8 @@ module parameters
 
   !--- Measurement ------------------------------------------------
   double precision, dimension(ScaleNum)       :: ScaleTable, dScaleTable
-  double precision, dimension(ScaleNum)       :: DiffVer
-  double precision, dimension(kNum, ScaleNum) :: DiffSigma !the subleading correction of sigma
-  double precision, dimension(ScaleNum)       :: DiffMu  !the leading order correction of sigma
+  double precision, dimension(ScaleNum, MaxOrder)       :: DiffVer
+  double precision, dimension(kNum, ScaleNum, MaxOrder) :: DiffSigma !the subleading correction of sigma
   double precision, dimension(ScaleNum)       :: Norm
 
   !-- Diagram Elements  --------------------------------------------
@@ -120,7 +119,9 @@ program main
         write(*,"(A16, f8.3)") "Sigma->Gamma4:", AcceptStep(6)/PropStep(6)
         ! write(*,"(A16, f8.3)") "Change ExtK:", AcceptStep(7)/PropStep(7)
         ! write(*, *) "coupling: ", DiffVer(CurrScale)/Norm
+        write(*,*) "Current Order: ", CurrOrder
         write(*, *) "coupling: ", EffVer
+        ! write(*, *) "self energy: ", DiffSigma(:, ScaleNum/2, 2)
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
         ! write(*, *) "mu: ", EffMu
@@ -143,8 +144,8 @@ program main
       integer :: i, j
       double precision :: kamp
   ! For a given order, the bigger factor, the more accurate result 
-      ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,20.0/)
-      ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,20.0/)
+      ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,0.2/)
+      ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,0.2/)
       Mom0=0.0
 
       PropStep=0.0
@@ -152,7 +153,6 @@ program main
 
       DiffVer=0.0
       DiffSigma=0.0
-      DiffMu=0.0
       Norm=1.0e-10
 
       LoopNum(1:3, SIGMA)=(/1,2,3/)
@@ -200,22 +200,27 @@ program main
 
     subroutine Measure()
       implicit none
-      double precision :: Factor
+      double precision :: Factor, realKK, kk
+      integer :: kamp
 
       if(CurrIRScale>=CurrScale) return
+
+      kk=norm2(ExtMomMesh(:, CurrExtMom))
+      realKK=kk*ScaleTable(CurrScale)
+
+
+      ! if(kk<kMax) then
+      !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+      kamp=int(realKK/DeltaK)+1
 
       Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder, CurrType)
       if(CurrOrder==0) then
           Norm(CurrScale)=Norm(CurrScale)+Factor
       else
         if(CurrType==GAMMA4) then
-            DiffVer(CurrScale)=DiffVer(CurrScale)+Factor
+            DiffVer(CurrScale, CurrOrder)=DiffVer(CurrScale, CurrOrder)+Factor
         else
-          if(CurrOrder==1) then
-            DiffMu(CurrScale)=DiffMu(CurrScale)+Factor
-          else
-            DiffSigma(CurrExtMom, CurrScale)=DiffSigma(CurrExtMom, CurrScale)+Factor
-          endif
+            DiffSigma(kamp, CurrScale, CurrOrder)=DiffSigma(kamp, CurrScale, CurrOrder)+Factor*DeltaK
         endif
       endif
       return
@@ -232,27 +237,27 @@ program main
       character*20 :: filename
       !Save Polarization to disk
 
-      ! do o=1, Order
-      !   write(ID, '(i10)') PID
-      !   write(order_str, '(i10)') o
-      !   filename="Data/Diag"//trim(adjustl(order_str))//"_"//trim(adjustl(ID))//".dat"
-      !   write(*,*) "Save to disk ..."
-      !   open(100, status="replace", file=trim(filename))
-      !   write(100, *) "#", Step
-      !   write(100, *) "#", Polarization(1, o)
-      !   ref=int(kF/DeltaQ)+1
-      !   do i=1, QBinNum
-      !       Obs = Polarization(i, o)
-      !       write(100, *) norm2(ExtMomMesh(:, i)), Obs
-      !   enddo
-      !   close(100)
+      do o=1, Order
+        write(ID, '(i10)') PID
+        write(order_str, '(i10)') o
+        filename="Sigma"//trim(adjustl(order_str))//"_"//trim(adjustl(ID))//".dat"
+        write(*,*) "Save to disk ..."
+        open(100, status="replace", file=trim(filename))
+        write(100, *) "#", Step
+        ! write(100, *) "#", DiffSigma(1, o)
+        do i=1, kNum
+            Obs = DiffSigma(i, ScaleNum/2, o)
+            write(100, *) norm2(ExtMomMesh(:, i)), Obs
+        enddo
+        close(100)
+      enddo
 
       return
     end subroutine
 
     subroutine SolveBetaFunc()
       implicit none
-      integer :: i, start, end
+      integer :: i, start, end, o
       double precision :: dg, dMu
       double precision, dimension(kNum) :: dSigma
       do i=1, ScaleNum-1
@@ -261,16 +266,22 @@ program main
         ! print *, start, end, dScaleTable(end), ScaleTable(start)
         !!!!!!!!!!!!!!!!  4-Vertex Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! EffVer(end)=(EffVer(start)*ScaleTable(start)+dScaleTable(start)*DiffVer(start)/Norm)/ScaleTable(end)
-        dg=(EffVer(start)+DiffVer(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        dg=(EffVer(start)+sum(DiffVer(start, :))/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        ! dg=(EffVer(start)+DiffVer(start, 1)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         EffVer(end)=EffVer(start)+dg
 
         !!!!!!!!!!!!!!!!!!!  Sigma Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        dMu=(2.0*EffMu(start)+DiffMu(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        ! dMu=(2.0*EffMu(start)+DiffMu(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         ! print *, EffMu(start), dMu
-        EffMu(end)=EffMu(start)+dMu
+        ! EffMu(end)=EffMu(start)+dMu
 
-        ! dSigma(:)=(2.0*EffSigma(:, )+DiffSigma(start)/Norm(start))
+        ! do o=1, Order
+        !   dSigma(:)=(2.0*EffSigma(:, start)+DiffSigma(:, start, o)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        ! enddo
       enddo
+      !set Mu(\Lambda)=\Sigma(k=0, \Lambda)
+      ! EffMu(:)=EffSigma(1,:)
+
     end subroutine
 
     double precision function CalcWeight(NewOrder, Type)
@@ -456,7 +467,7 @@ program main
       else
         CurrExtMom=CurrExtMom-int(grnd()*Delta)
       endif
-      if(CurrExtMom>kMax .or. CurrExtMom<1) then
+      if(CurrExtMom>kNum .or. CurrExtMom<1) then
         CurrExtMom=OldExtMom
         return
       endif
@@ -561,23 +572,27 @@ program main
     double precision function Green(Mom, Scale, g_type)
     !dimensionless green's function
       implicit none
-      double precision :: kk, gg
+      double precision :: kk, gg, realKK
       integer :: g_type, Scale, kamp
       double precision, dimension(D) :: Mom
       kk=norm2(Mom)
-      if(kk<kMax) then
-        !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-        kamp=int(kk/DeltaK)+1
-        ! gg=1.0/(kk*kk+EffMu(Scale)+1.0+EffSigma(kamp, Scale))
-        gg=1.0/(kk*kk+1.0+EffSigma(kamp, Scale))
-      else
-        gg=1.0/(kk*kk+1.0+EffSigma(kamp, ScaleNum))
+      realKK=kk*ScaleTable(Scale)
+
+      if(realKK>UVScale) then
+        Green=0.0
+        return
       endif
-      
-      ! if(k2>UVScale/ScaleTable(Scale)) then
-      !   Green=0.0
-      !   return
+
+      ! if(kk<kMax) then
+      !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+      kamp=int(realKK/DeltaK)+1
+      ! gg=1.0/(kk*kk+EffMu(Scale)+1.0+EffSigma(kamp, Scale))
+      gg=1.0/(kk*kk+1.0+EffSigma(kamp, Scale)-EffMu(Scale))
+
+      ! else
+        ! gg=1.0/(kk*kk+1.0+EffSigma(kamp, ScaleNum))
       ! endif
+      
 
       if(g_type==0) then
         Green=gg
