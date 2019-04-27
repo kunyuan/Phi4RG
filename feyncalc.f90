@@ -99,7 +99,7 @@ program main
       enddo
 
       ! call DynamicTest()
-      ! call SolveBetaFunc()
+      call SolveBetaFunc()
 
       if (iBlck==AnnealStep) then
         AnnealStep=AnnealStep*2
@@ -120,8 +120,8 @@ program main
         ! write(*,"(A16, f8.3)") "Change ExtK:", AcceptStep(7)/PropStep(7)
         write(*,*) "Current Order: ", CurrOrder
         write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
-        write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
-        ! write(*, *) "coupling: ", EffVer
+        ! write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
+        write(*, *) "coupling: ", EffVer
         ! write(*, *) "self energy: ", DiffSigma(:, ScaleNum/2, 2)
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
@@ -145,8 +145,8 @@ program main
       integer :: i, j
       double precision :: kamp
   ! For a given order, the bigger factor, the more accurate result 
-      ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,0.2/)
-      ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,0.2/)
+      ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,0.20/)
+      ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,0.20/)
       Mom0=0.0
 
       PropStep=0.0
@@ -267,8 +267,8 @@ program main
         ! print *, start, end, dScaleTable(end), ScaleTable(start)
         !!!!!!!!!!!!!!!!  4-Vertex Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! EffVer(end)=(EffVer(start)*ScaleTable(start)+dScaleTable(start)*DiffVer(start)/Norm)/ScaleTable(end)
-        dg=(EffVer(start)-sum(DiffVer(start, :))/Norm(start))*dScaleTable(end)/ScaleTable(start)
-        ! dg=(EffVer(start)+DiffVer(start, 1)/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        ! dg=(EffVer(start)-sum(DiffVer(start, :))/Norm(start))*dScaleTable(end)/ScaleTable(start)
+        dg=(EffVer(start)-DiffVer(start, 1)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         EffVer(end)=EffVer(start)+dg
 
         !!!!!!!!!!!!!!!!!!!  Sigma Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
