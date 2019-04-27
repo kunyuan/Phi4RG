@@ -24,11 +24,11 @@ module parameters
   double precision, dimension(0:MaxOrder, 3) :: ReWeightFactor       !reweightfactor for each order
 
   integer                                 :: CurrOrder, CurrScale, CurrIRScale
-  integer                                 :: CurrType    ! SelfEnergy: 1, Ver4: 2
+  integer                                 :: CurrType    !SelfEnergy: 1, Ver4: 2
   integer                                 :: CurrExtMom  !external momentum for self energy
   double precision                        :: CurrWeight
   double precision, dimension(D, MaxOrder+3)  :: LoopMom ! values to attach to each loop basis
-  double precision, dimension(D, kNum)        :: ExtMomMesh ! external momentum
+  double precision, dimension(D, kNum)        :: ExtMomMesh ! external momentum (store physical momentum (unscaled))
   integer, dimension(MaxOrder, 2)         :: LoopNum !self energy has two ext loops: Order+2, gamma4: Order
   double precision, dimension(D)          :: Mom0 ! values to attach to each loop basis
 
@@ -103,7 +103,7 @@ program main
       enddo
 
       ! call DynamicTest()
-      ! call SolveBetaFunc()
+      call SolveBetaFunc()
 
       if (iBlck==AnnealStep) then
         AnnealStep=AnnealStep*2
@@ -124,11 +124,13 @@ program main
         write(*,"(A16, f8.3)") "Sigma->Gamma4:", AcceptStep(7)/PropStep(7)
         write(*,"(A16, f8.3)") "Gamma4->Eta:", AcceptStep(8)/PropStep(8)
         write(*,"(A16, f8.3)") "Eta->Gamma4:", AcceptStep(9)/PropStep(9)
+        write(*,*) "Current IRScale: ", CurrIRScale, "; Current Scale: ", CurrScale
         write(*,*) "Current Order: ", CurrOrder
         write(*,*) "Current Type: ", CurrType
-        write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
+        write(*,*) "Current Weight: ", CurrWeight
+        ! write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
         ! write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
-        ! write(*, *) "coupling: ", EffVer
+        write(*, *) "coupling: ", EffVer
         ! write(*, *) "self energy: ", DiffSigma(:, ScaleNum/2, 2)
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
@@ -154,7 +156,7 @@ program main
   ! For a given order, the bigger factor, the more accurate result 
       ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,0.20/)
       ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,0.20/)
-      ReWeightFactor(0:2, ETA)=(/0.0,0.0,0.20/)
+      ReWeightFactor(0:2, ETA)=(/0.0,0.0,1.00/)
       Mom0=0.0
 
       PropStep=0.0
@@ -210,38 +212,6 @@ program main
       return
     end subroutine
 
-    subroutine Measure()
-      implicit none
-      double precision :: Factor, realKK, kk
-      integer :: kamp
-
-      if(CurrIRScale>=CurrScale) return
-
-      kk=norm2(ExtMomMesh(:, CurrExtMom))
-      realKK=kk*ScaleTable(CurrScale)
-
-
-      ! if(kk<kMax) then
-      !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-      kamp=int(realKK/DeltaK)+1
-
-      Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder, CurrType)
-      if(CurrOrder==0) then
-          Norm(CurrScale)=Norm(CurrScale)+Factor
-      else
-        if(CurrType==GAMMA4) then
-            DiffVer(CurrScale, CurrOrder)=DiffVer(CurrScale, CurrOrder)+Factor
-        else
-            DiffSigma(kamp, CurrScale, CurrOrder)=DiffSigma(kamp, CurrScale, CurrOrder)+Factor
-        endif
-      endif
-
-      if(CurrOrder>=2) then
-        DiffGamma2K(kamp, CurrScale, CurrOrder)=DiffGamma2K(kamp, CurrScale, CurrOrder)+Factor
-      endif
-      return
-    end subroutine
-    
     subroutine SaveToDisk()
       implicit none
       integer :: i, ref, j, o
@@ -295,7 +265,11 @@ program main
         ! EffVer(end)=(EffVer(start)*ScaleTable(start)+dScaleTable(start)*DiffVer(start)/Norm)/ScaleTable(end)
         ! dg=(EffVer(start)-sum(DiffVer(start, :))/Norm(start))*dScaleTable(end)/ScaleTable(start)
         dg=(EffVer(start)-DiffVer(start, 1)/Norm(start))*dScaleTable(end)/ScaleTable(start)
-        EffVer(end)=EffVer(start)+dg
+        if(dg<5.0) then
+          EffVer(end)=EffVer(start)+dg
+        ! else
+        !   print *, "dg", dg, start, EffVer(start)
+        endif
 
         !!!!!!!!!!!!!!!!!!!  Sigma Renormalization  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ! dMu=(2.0*EffMu(start)+DiffMu(start)/Norm(start))*dScaleTable(end)/ScaleTable(start)
@@ -305,13 +279,44 @@ program main
         ! do o=1, Order
         !   dSigma(:)=(2.0*EffSigma(:, start)+DiffSigma(:, start, o)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         ! enddo
-        EffGamma2K(:, start)=EffGamma2K(:,start)+DiffGamma2K(:, start, 1)/Norm(start)+DiffGamma2K(:, start, 2)/Norm(start)
+        ! EffGamma2K(:, start)=EffGamma2K(:,start)+DiffGamma2K(:, start, 1)/Norm(start)+DiffGamma2K(:, start, 2)/Norm(start)
       enddo
       !set Mu(\Lambda)=\Sigma(k=0, \Lambda)
       ! EffMu(:)=EffSigma(1,:)
-
-
     end subroutine
+
+    subroutine Measure()
+      implicit none
+      double precision :: Factor, realKK, kk
+      integer :: kamp
+
+      if(CurrIRScale>=CurrScale) return
+
+      kk=norm2(ExtMomMesh(:, CurrExtMom))
+      realKK=kk*ScaleTable(CurrScale)
+
+
+      ! if(kk<kMax) then
+      !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+      kamp=int(realKK/DeltaK)+1
+
+      Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder, CurrType)
+      if(CurrOrder==0) then
+          Norm(CurrScale)=Norm(CurrScale)+Factor
+      else
+        if(CurrType==GAMMA4) then
+            DiffVer(CurrScale, CurrOrder)=DiffVer(CurrScale, CurrOrder)+Factor
+        else
+            DiffSigma(kamp, CurrScale, CurrOrder)=DiffSigma(kamp, CurrScale, CurrOrder)+Factor
+        endif
+      endif
+
+      if(CurrOrder>=2) then
+        DiffGamma2K(kamp, CurrScale, CurrOrder)=DiffGamma2K(kamp, CurrScale, CurrOrder)+Factor
+      endif
+      return
+    end subroutine
+    
 
     double precision function CalcWeight(NewOrder, Type)
       !calculate the weight for ALL diagrams in a given sector
@@ -537,21 +542,30 @@ program main
         Index=8
         CurrType=ETA
         ! CurrExtMom=int(grnd()*ScaleTable(CurrScale)/DeltaK)+1
+        CurrExtMom=int(grnd()*kNum)+1
         ! CurrExtMom=int(ScaleNum/2)+1
-        ! prop=ScaleNum*2
-        CurrExtMom=1
+        prop=kNum
+        ! CurrExtMom=1
       else
         Index=9
         CurrType=GAMMA4
         ! if(CurrExtMom>=int(ScaleTable(CurrScale)/DeltaK)+1) return
         ! if(CurrExtMom>=int(ScaleNum/2)+1) return
         ! prop=1.0/ScaleNum/2
+        prop=1.0/kNum
       endif
 
-      prop=1.0
       PropStep(Index) = PropStep(Index) + 1.0
       Weight = CalcWeight(CurrOrder, CurrType)
       R = prop*abs(Weight)/abs(CurrWeight)
+      ! print *, "Step:", Step
+      ! print *, "Weight: ", Weight, CurrWeight
+      ! print *, "R: ", R
+      ! print *, "Type: ", CurrType
+      ! print *, "ExtMom: ", CurrExtMom, norm2(ExtMomMesh(:, CurrExtMom))
+      ! print *, "Scale: ", CurrScale
+      ! print *, " "
+      ! if(Step>31840) stop
 
       if(grnd()<R) then
         AcceptStep(Index) = AcceptStep(Index)+1.0
@@ -653,10 +667,10 @@ program main
       kk=norm2(Mom)
       realKK=kk*ScaleTable(Scale)
 
-      ! if(realKK>UVScale) then
-      !   Green=0.0
-      !   return
-      ! endif
+      if(realKK>UVScale) then
+        Green=0.0
+        return
+      endif
 
       ! if(kk<kMax) then
       !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
@@ -727,6 +741,11 @@ program main
       UWeight=G1p*G3*(G4*G2+G4*G3-G2*G3)*EffVer(CurrScale)**3
       ! UWeight=G1p*G3*(-G2*G3)*EffVer(CurrScale)**3
       Ver4_TwoLoop=6.0*UWeight/(2.0*pi)**(2.0*D)
+      if(abs(Ver4_TwoLoop)>1.0e4) then
+        print *, G1p, G2, G3, G4
+        print *, Step, Ver4_TwoLoop
+        stop
+      endif
     end function
 
     double precision function Sigma_OneLoop(VerOrder, ExtK, InterMomIndex)
@@ -775,5 +794,10 @@ program main
       !if IsCritical is true, then one should subtract Sigma(ExtK=0).
       !however, it is easy to see Sigma_TwoLoop(ExtK=0) is automatically zero!
       SigmaK_TwoLoop=Weight/(2.0*pi)**(2*D)
+      ! if(abs(Step-31287)<1.0e-3) then
+      ! print *, "Sigma Step:", Step
+      ! print *, "Sigma Mom:", norm2(Mom1), norm2(Mom2)
+      ! print *, "G: ", G1, G2, G3
+      ! endif
     end function
 end program main
