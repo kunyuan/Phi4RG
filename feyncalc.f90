@@ -28,7 +28,7 @@ module parameters
   integer                                 :: CurrExtMom  !external momentum for self energy
   double precision                        :: CurrWeight
   double precision, dimension(D, MaxOrder+3)  :: LoopMom ! values to attach to each loop basis
-  double precision, dimension(D, kNum)  :: ExtMomMesh ! external momentum (store physical momentum (unscaled))
+  double precision, dimension(D, kNum)  :: ExtMomMesh ! external momentum 
   integer, dimension(MaxOrder, 2)         :: LoopNum !self energy has two ext loops: Order+2, gamma4: Order
   double precision, dimension(D)          :: Mom0 ! values to attach to each loop basis
 
@@ -116,7 +116,7 @@ program main
         write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
         ! write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
         ! write(*, *) "coupling: ", EffVer
-        scale=1
+        scale=ScaleNum/2+1
         ! write(*,*) "DiffGamma2: "
         ! do i=1, kNum
         !     print *, DiffGamma2K(i, scale, 2)*Green(ExtMomMesh(:, i)/ScaleTable(scale), scale, 0)
@@ -693,10 +693,10 @@ program main
       kk=norm2(Mom)
       realKK=kk*ScaleTable(Scale)
 
-      if(realKK>UVScale) then
-        Green=0.0
-        return
-      endif
+      ! if(realKK>UVScale) then
+      !   Green=0.0
+      !   return
+      ! endif
 
       ! if(kk<kMax) then
       !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
@@ -814,7 +814,9 @@ program main
       G1=Green(Mom1, CurrScale, 0)
       G2=Green(Mom1+Mom2, CurrScale, 0)
       G3=Green(Mom2+ExtK, CurrScale, 0)
+      ! G3=Green(Mom2, CurrScale, 0)
       ! G4=Green(ExtK, CurrScale, 0)
+      ! G4=Green(Mom2, CurrScale, 0)
 
       Weight=G1*G2*G3*G3/6.0*EffVer(CurrScale)**2
       ! Weight=G1*G2*G3*G3/6.0
@@ -832,6 +834,6 @@ program main
       realKK=kk*ScaleTable(Scale)
       !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
       kamp=int(realKK/DeltaK)+1
-      SigmaK_TwoLoop=SigmaK_TwoLoop*EffGamma2K(kamp, CurrScale)
+      ! SigmaK_TwoLoop=SigmaK_TwoLoop*EffGamma2K(kamp, CurrScale)
     end function
 end program main
