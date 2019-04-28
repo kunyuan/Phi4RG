@@ -250,7 +250,7 @@ program main
         close(100)
       enddo
 
-      scale=2
+      scale=1
       filename="Eta"//"_"//trim(adjustl(ID))//".dat"
       write(*,*) "Save to disk ..."
       open(100, status="replace", file=trim(filename))
@@ -259,8 +259,8 @@ program main
       do i=1, kNum
         kk=ExtMomMesh(:, i)/ScaleTable(scale)
         kamp=norm2(kk)
-        ! Obs = 2.0-EffGamma2K(i, scale)*Green(kk, scale, 0)*kamp
-        Obs = 2.0-EffGamma2K(i, scale)*kamp/kamp/kamp
+        Obs = 2.0-EffGamma2K(i, scale)*Green(kk, scale, 0)*kamp
+        ! Obs = 2.0-EffGamma2K(i, scale)*kamp/kamp/kamp
         write(100, *) norm2(ExtMomMesh(:, i)), Obs
       enddo
       close(100)
@@ -296,9 +296,12 @@ program main
         !   dSigma(:)=(2.0*EffSigma(:, start)+DiffSigma(:, start, o)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         ! enddo
 
+      enddo
+
+      do i=1, ScaleNum
         do j=1, kNum
           kamp=(j-0.5)*DeltaK
-          EffGamma2K(j, start)=2.0*(kamp/ScaleTable(start))+DiffGamma2K(j, start, 2)/Norm(start)
+          EffGamma2K(j, i)=2.0*(kamp/ScaleTable(i))+DiffGamma2K(j, i, 2)/Norm(i)
           ! EffGamma2K(j, start)=2.0*(kamp/ScaleTable(start))
           ! if (start==2) then 
           !   print *, EffGamma2K(j, start)-2.0*(kamp/ScaleTable(start))
