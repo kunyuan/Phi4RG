@@ -90,8 +90,8 @@ program main
           call ChangeScale()
         else if (x<3.0) then
           call ChangeMom()
-        ! else if (x<4.0) then
-        !   call ChangeExtMom()
+        else if (x<4.0) then
+          call ChangeExtMom()
         ! else if (x<6.0) then
         !   call ChangeType()
         else if (x<8.0) then
@@ -105,10 +105,10 @@ program main
       ! call DynamicTest()
       call SolveBetaFunc()
 
-      ! if (iBlck==AnnealStep) then
-      !   AnnealStep=AnnealStep*2
-      !   CurrIRScale=CurrIRScale/2
-      ! endif
+      if (iBlck==AnnealStep) then
+        AnnealStep=AnnealStep*2
+        CurrIRScale=CurrIRScale/2
+      endif
 
       if(mod(iBlck, 10)==0) then
         !!!!!!!!!!!!  Print Info and Save Data !!!!!!!!!!!!!!!!!!!!!!!
@@ -116,12 +116,12 @@ program main
         write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
         ! write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
         ! write(*, *) "coupling: ", EffVer
-        scale=ScaleNum/2+1
+        scale=1
         ! write(*,*) "DiffGamma2: "
         ! do i=1, kNum
         !     print *, DiffGamma2K(i, scale, 2)*Green(ExtMomMesh(:, i)/ScaleTable(scale), scale, 0)
         ! enddo
-        write(*, *) "DiffGamma2: ", DiffGamma2K(:, scale, 2)/Norm
+        write(*, *) "DiffGamma2: ", DiffGamma2K(:, scale, 2)/Norm(scale)
         ! write(*, *) "self energy: ", DiffSigma(:, ScaleNum/2, 2)
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
@@ -189,7 +189,7 @@ program main
         kamp=(j-0.5)*DeltaK
         ExtMomMesh(1, j)=kamp
         do k=1, ScaleNum
-          DiffGamma2K(j, k, 1)=2.0*(kamp/ScaleTable(k))**2
+          DiffGamma2K(j, k, 1)=2.0*(kamp/ScaleTable(k))
           EffGamma2K(j, k)=DiffGamma2K(j, k, 1)
         enddo
       enddo
@@ -227,6 +227,8 @@ program main
       integer :: i, ref, j, o, scale
       double precision :: Obs
       double precision :: DeltaQ
+      double precision, dimension(D) :: kk
+      double precision :: kamp
       character*10 :: ID
       character*10 :: order_str
       character*10 :: DiagIndex
@@ -248,15 +250,18 @@ program main
         close(100)
       enddo
 
+      scale=2
       filename="Eta"//"_"//trim(adjustl(ID))//".dat"
       write(*,*) "Save to disk ..."
       open(100, status="replace", file=trim(filename))
-      write(100, *) "#", Step
+      write(100, *) "#", Step, ScaleTable(scale)
       ! write(100, *) "#", DiffSigma(1, o)
-      scale=2
       do i=1, kNum
-          Obs = 2.0-EffGamma2K(i, scale)*Green(ExtMomMesh(:, i)/ScaleTable(scale), scale, 0)
-          write(100, *) norm2(ExtMomMesh(:, i)), Obs
+        kk=ExtMomMesh(:, i)/ScaleTable(scale)
+        kamp=norm2(kk)
+        ! Obs = 2.0-EffGamma2K(i, scale)*Green(kk, scale, 0)*kamp
+        Obs = 2.0-EffGamma2K(i, scale)*kamp/kamp/kamp
+        write(100, *) norm2(ExtMomMesh(:, i)), Obs
       enddo
       close(100)
 
@@ -266,7 +271,7 @@ program main
     subroutine SolveBetaFunc()
       implicit none
       integer :: i, j, start, end, o
-      double precision :: dg, dMu, kk
+      double precision :: dg, dMu, kk, kamp
       double precision, dimension(kNum) :: dSigma
       do i=1, ScaleNum-1
         start=ScaleNum-i+1
@@ -290,7 +295,15 @@ program main
         ! do o=1, Order
         !   dSigma(:)=(2.0*EffSigma(:, start)+DiffSigma(:, start, o)/Norm(start))*dScaleTable(end)/ScaleTable(start)
         ! enddo
-        ! EffGamma2K(:, start)=EffGamma2K(:,STart)+DiffGamma2K(:, start, 1)+DiffGamma2K(:, start, 2)/Norm(start)
+
+        do j=1, kNum
+          kamp=(j-0.5)*DeltaK
+          EffGamma2K(j, start)=2.0*(kamp/ScaleTable(start))+DiffGamma2K(j, start, 2)/Norm(start)
+          ! EffGamma2K(j, start)=2.0*(kamp/ScaleTable(start))
+          ! if (start==2) then 
+          !   print *, EffGamma2K(j, start)-2.0*(kamp/ScaleTable(start))
+          ! endif
+        enddo
       enddo
       !set Mu(\Lambda)=\Sigma(k=0, \Lambda)
       ! EffMu(:)=EffSigma(1,:)
@@ -790,16 +803,17 @@ program main
 
     double precision function SigmaK_TwoLoop(ExtK, InterMomIndex)
       implicit none
-      integer :: InterMomIndex
+      integer :: InterMomIndex, kamp
       double precision, dimension (D) :: ExtK, Mom1, Mom2
-      double precision :: Weight, G1, G2, G3, G4
+      double precision :: Weight, G1, G2, G3, G4, kk, realKK
       Mom1=LoopMom(:, InterMomIndex)
       Mom2=LoopMom(:, InterMomIndex+1)
       G1=Green(Mom1, CurrScale, 0)
       G2=Green(Mom1+Mom2, CurrScale, 0)
       G3=Green(Mom2+ExtK, CurrScale, 0)
-      G4=Green(ExtK, CurrScale, 0)
-      Weight=G1*G2*G3*G3*sum(ExtK*(Mom2+ExtK))/6.0*EffVer(CurrScale)
+      ! G4=Green(ExtK, CurrScale, 0)
+
+      Weight=G1*G2*G3*G3/6.0*EffVer(CurrScale)**2
       ! Weight=G1*G2*G3*G3/6.0
 
       !if IsCritical is true, then one should subtract Sigma(ExtK=0).
@@ -810,6 +824,11 @@ program main
       ! print *, "Sigma Mom:", norm2(Mom1), norm2(Mom2)
       ! print *, "G: ", G1, G2, G3
       ! endif
-      SigmaK_TwoLoop=SigmaK_TwoLoop*G4
+
+      kk=norm2(ExtK+Mom2)
+      realKK=kk*ScaleTable(Scale)
+      !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
+      kamp=int(realKK/DeltaK)+1
+      SigmaK_TwoLoop=SigmaK_TwoLoop*EffGamma2K(kamp, CurrScale)
     end function
 end program main
