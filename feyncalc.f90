@@ -5,7 +5,7 @@ module parameters
   integer, parameter :: ScaleNum=64    !number of scales
   integer, parameter :: kNum=64       !k bins of Green's function
   ! double precision, parameter :: kMax=8.0
-  double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
+  double precision, parameter   :: UVScale=32.0     !the upper bound of energy scale
   double precision, parameter :: DeltaK=UVScale/kNum
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
   integer, parameter          :: SIGMA=1, GAMMA4=2, ETA=3
@@ -62,7 +62,7 @@ program main
     use parameters
     implicit none
     integer :: iBlck, iInner, AnnealStep, TotalStep, scale, i
-    double precision :: x
+    double precision :: x, kamp
   
     print *, 'mass2, coupling, Order, TotalStep(*1e6), Seed, PID'
     read(*,*) Mass2, BareCoupling, Order, TotalStep, Seed, PID
@@ -116,12 +116,19 @@ program main
         write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
         ! write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
         ! write(*, *) "coupling: ", EffVer
-        scale=ScaleNum/2+1
+        ! scale=ScaleNum/2+1
+        scale=1
         ! write(*,*) "DiffGamma2: "
         ! do i=1, kNum
         !     print *, DiffGamma2K(i, scale, 2)*Green(ExtMomMesh(:, i)/ScaleTable(scale), scale, 0)
         ! enddo
         write(*, *) "DiffGamma2: ", DiffGamma2K(:, scale, 2)/Norm(scale)
+
+        write(*,*) "EffGammaK2"
+        do i=1, kNum
+          kamp=norm2(ExtMomMesh(:, i))
+          ! write(*, *) kamp,  2.0-EffGamma2K(i, scale)*kamp*Green(ExtMomMesh(:,i), scale, 0)
+        enddo 
         ! write(*, *) "self energy: ", DiffSigma(:, ScaleNum/2, 2)
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
@@ -189,7 +196,7 @@ program main
         kamp=(j-0.5)*DeltaK
         ExtMomMesh(1, j)=kamp
         do k=1, ScaleNum
-          DiffGamma2K(j, k, 1)=2.0*(kamp/ScaleTable(k))
+          DiffGamma2K(j, k, 1)=2.0*kamp
           EffGamma2K(j, k)=DiffGamma2K(j, k, 1)
         enddo
       enddo
@@ -257,7 +264,7 @@ program main
       write(100, *) "#", Step, ScaleTable(scale)
       ! write(100, *) "#", DiffSigma(1, o)
       do i=1, kNum
-        kk=ExtMomMesh(:, i)/ScaleTable(scale)
+        kk=ExtMomMesh(:, i)
         kamp=norm2(kk)
         Obs = 2.0-EffGamma2K(i, scale)*Green(kk, scale, 0)*kamp
         ! Obs = 2.0-EffGamma2K(i, scale)*kamp/kamp/kamp
@@ -301,7 +308,7 @@ program main
       do i=1, ScaleNum
         do j=1, kNum
           kamp=(j-0.5)*DeltaK
-          EffGamma2K(j, i)=2.0*(kamp/ScaleTable(i))+DiffGamma2K(j, i, 2)/Norm(i)
+          EffGamma2K(j, i)=2.0*kamp+DiffGamma2K(j, i, 2)/Norm(i)
           ! EffGamma2K(j, start)=2.0*(kamp/ScaleTable(start))
           ! if (start==2) then 
           !   print *, EffGamma2K(j, start)-2.0*(kamp/ScaleTable(start))
@@ -359,7 +366,7 @@ program main
             CalcWeight=Ver4_TwoLoop(1)
           endif
         else if(Type==SIGMA) then
-          ExtKScaled=ExtMomMesh(:, CurrExtMom)/ScaleTable(CurrScale)
+          ExtKScaled=ExtMomMesh(:, CurrExtMom)
           ! Sigma
           if(NewOrder==1) then
             CalcWeight=Sigma_OneLoop(0, ExtKScaled, 1)
@@ -367,7 +374,7 @@ program main
             CalcWeight=Sigma_TwoLoop(ExtKScaled, 1)
           endif
         else if(Type==ETA) then
-          ExtKScaled=ExtMomMesh(:, CurrExtMom)/ScaleTable(CurrScale)
+          ExtKScaled=ExtMomMesh(:, CurrExtMom)
           if(NewOrder==2) then
             CalcWeight=SigmaK_TwoLoop(ExtKScaled, 1)
           else
@@ -700,7 +707,7 @@ program main
 
       ! if(kk<kMax) then
       !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-      kamp=int(realKK/DeltaK)+1
+      ! kamp=int(realKK/DeltaK)+1
       ! gg=1.0/(kk*kk+EffMu(Scale)+1.0+EffSigma(kamp, Scale))
       ! gg=1.0/(kk*kk+1.0+EffSigma(kamp, Scale)-EffMu(Scale))
       gg=1.0/(kk*kk+1.0)
@@ -830,10 +837,14 @@ program main
       ! print *, "G: ", G1, G2, G3
       ! endif
 
-      kk=norm2(ExtK+Mom2)
-      realKK=kk*ScaleTable(Scale)
+      kk=ExtK(1)+Mom2(1)
       !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-      kamp=int(realKK/DeltaK)+1
-      ! SigmaK_TwoLoop=SigmaK_TwoLoop*EffGamma2K(kamp, CurrScale)
+      ! kamp=int(abs(kk)/DeltaK)+1
+      ! if(kamp<=kNum .and. abs(kk)>1.0e-10) then
+      !   SigmaK_TwoLoop=SigmaK_TwoLoop*EffGamma2K(kamp, CurrScale)*kk/abs(kk)
+      ! else
+      !   SigmaK_TwoLoop=SigmaK_TwoLoop*2.0*kk
+      ! endif
+      SigmaK_TwoLoop=SigmaK_TwoLoop*2.0*kk
     end function
 end program main
