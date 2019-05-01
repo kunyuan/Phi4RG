@@ -4,9 +4,9 @@ module parameters
   integer, parameter :: D=3           !D=2 or D=3  
   integer, parameter :: ScaleNum=64    !number of scales
   integer, parameter :: kNum=64       !k bins of Green's function
-  ! double precision, parameter :: kMax=8.0
-  double precision, parameter   :: UVScale=32.0     !the upper bound of energy scale
-  double precision, parameter :: DeltaK=UVScale/kNum
+  double precision, parameter :: kMax=8.0 !the maximum external K=\Lambda*8.0
+  double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
+  double precision, parameter :: DeltaK=kMax/kNum
   integer, parameter                    :: MaxOrder=4           ! Max diagram order
   integer, parameter          :: SIGMA=1, GAMMA4=2, ETA=3
   logical, parameter          :: IsCritical=.true.
@@ -171,7 +171,7 @@ program main
   ! For a given order, the bigger factor, the more accurate result 
       ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,0.20/)
       ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,0.20/)
-      ReWeightFactor(0:2, ETA)=(/0.0,0.0,10.00/)
+      ReWeightFactor(0:2, ETA)=(/0.0,0.0,0.20/)
       Mom0=0.0
 
       PropStep=0.0
@@ -698,7 +698,7 @@ program main
       integer :: g_type, Scale, kamp
       double precision, dimension(D) :: Mom
       kk=norm2(Mom)
-      realKK=kk*ScaleTable(Scale)
+      ! realKK=kk*ScaleTable(Scale)
 
       ! if(realKK>UVScale) then
       !   Green=0.0
@@ -795,17 +795,35 @@ program main
       return
     end function
 
+    ! dSigma/d\Lambda
+    ! double precision function Sigma_TwoLoop(ExtK, InterMomIndex)
+    !   implicit none
+    !   integer :: InterMomIndex
+    !   double precision, dimension (D) :: ExtK, Mom1, Mom2
+    !   double precision :: Weight, G1, G2, G3
+    !   Mom1=LoopMom(:, InterMomIndex)
+    !   Mom2=LoopMom(:, InterMomIndex+1)
+    !   G1=Green(Mom1, CurrScale, 1)
+    !   G2=Green(Mom2, CurrScale, 0)
+    !   G3=Green(Mom1+Mom2-ExtK, CurrScale, 0)
+    !   Weight=-0.5*G1*(G2*G3-G2*G2)
+    !   !if IsCritical is true, then one should subtract Sigma(ExtK=0).
+    !   !however, it is easy to see Sigma_TwoLoop(ExtK=0) is automatically zero!
+    !   Sigma_TwoLoop=Weight/(2.0*pi)**(2*D)
+    ! end function
+
     double precision function Sigma_TwoLoop(ExtK, InterMomIndex)
       implicit none
       integer :: InterMomIndex
       double precision, dimension (D) :: ExtK, Mom1, Mom2
-      double precision :: Weight, G1, G2, G3
+      double precision :: Weight, G1, G2, G3, G4
       Mom1=LoopMom(:, InterMomIndex)
       Mom2=LoopMom(:, InterMomIndex+1)
-      G1=Green(Mom1, CurrScale, 1)
+      G1=Green(Mom1, CurrScale, 0)
       G2=Green(Mom2, CurrScale, 0)
       G3=Green(Mom1+Mom2-ExtK, CurrScale, 0)
-      Weight=-0.5*G1*(G2*G3-G2*G2)
+      G4=Green(Mom1+Mom2, CurrScale, 0)
+      Weight=-G1*G2*(G3-G4)/6.0*EffVer(CurrScale)**2
       !if IsCritical is true, then one should subtract Sigma(ExtK=0).
       !however, it is easy to see Sigma_TwoLoop(ExtK=0) is automatically zero!
       Sigma_TwoLoop=Weight/(2.0*pi)**(2*D)
