@@ -2,12 +2,12 @@ module parameters
   IMPLICIT NONE
   !-- Parameters -------------------------------------------------
   integer, parameter :: D=3           !D=2 or D=3  
-  integer, parameter :: ScaleNum=64    !number of scales
-  integer, parameter :: kNum=64       !k bins of Green's function
+  integer, parameter :: ScaleNum=8    !number of scales
+  integer, parameter :: kNum=8       !k bins of Green's function
   double precision, parameter :: kMax=8.0 !the maximum external K=\Lambda*8.0
-  double precision, parameter   :: UVScale=8.0     !the upper bound of energy scale
+  double precision, parameter :: UVScale=8.0     !the upper bound of energy scale
   double precision, parameter :: DeltaK=kMax/kNum
-  integer, parameter                    :: MaxOrder=4           ! Max diagram order
+  integer, parameter          :: MaxOrder=4           ! Max diagram order
   integer, parameter          :: SIGMA=1, GAMMA4=2, ETA=3
   logical, parameter          :: IsCritical=.true.
 
@@ -92,8 +92,8 @@ program main
           call ChangeMom()
         else if (x<4.0) then
           call ChangeExtMom()
-        ! else if (x<6.0) then
-        !   call ChangeType()
+        else if (x<6.0) then
+          call ChangeType()
         else if (x<8.0) then
           call ChangeType2()
         endif
@@ -129,22 +129,22 @@ program main
           kamp=norm2(ExtMomMesh(:, i))
           ! write(*, *) kamp,  2.0-EffGamma2K(i, scale)*kamp*Green(ExtMomMesh(:,i), scale, 0)
         enddo 
-        ! write(*, *) "self energy: ", DiffSigma(:, ScaleNum/2, 2)
+        write(*, *) "self energy: ", DiffSigma(:, scale, 2)/Norm(scale)
         ! write(*, *) "coupling: ", DiffVer/Norm
         ! write(*, *) "mu: ", DiffMu/Norm
         ! write(*, *) "mu: ", EffMu
 
         print *, iBlck, "million steps"
         write(*,"(A20)") "Accept Ratio: "
-        write(*,"(A16, f8.3)") "Increase Order:", AcceptStep(1)/PropStep(1)
-        write(*,"(A16, f8.3)") "Decrease Order:", AcceptStep(2)/PropStep(2)
-        write(*,"(A16, f8.3)") "Change Scale:", AcceptStep(3)/PropStep(3)
-        write(*,"(A16, f8.3)") "Change Mom:", AcceptStep(4)/PropStep(4)
-        write(*,"(A16, f8.3)") "Change ExtK:", AcceptStep(5)/PropStep(5)
-        write(*,"(A16, f8.3)") "Gamma4->Sigma:", AcceptStep(6)/PropStep(6)
-        write(*,"(A16, f8.3)") "Sigma->Gamma4:", AcceptStep(7)/PropStep(7)
-        write(*,"(A16, f8.3)") "Gamma4->Eta:", AcceptStep(8)/PropStep(8)
-        write(*,"(A16, f8.3)") "Eta->Gamma4:", AcceptStep(9)/PropStep(9)
+        write(*,"(A16, f8.6)") "Increase Order:", AcceptStep(1)/PropStep(1)
+        write(*,"(A16, f8.6)") "Decrease Order:", AcceptStep(2)/PropStep(2)
+        write(*,"(A16, f8.6)") "Change Scale:", AcceptStep(3)/PropStep(3)
+        write(*,"(A16, f8.6)") "Change Mom:", AcceptStep(4)/PropStep(4)
+        write(*,"(A16, f8.6)") "Change ExtK:", AcceptStep(5)/PropStep(5)
+        write(*,"(A16, f8.6)") "Gamma4->Sigma:", AcceptStep(6)/PropStep(6)
+        write(*,"(A16, f8.6)") "Sigma->Gamma4:", AcceptStep(7)/PropStep(7)
+        write(*,"(A16, f8.6)") "Gamma4->Eta:", AcceptStep(8)/PropStep(8)
+        write(*,"(A16, f8.6)") "Eta->Gamma4:", AcceptStep(9)/PropStep(9)
 
         write(*,*) "Current IRScale: ", CurrIRScale, "; Current Scale: ", CurrScale
         write(*,*) "Current Order: ", CurrOrder
@@ -170,7 +170,7 @@ program main
       double precision :: kamp
   ! For a given order, the bigger factor, the more accurate result 
       ReWeightFactor(0:2, GAMMA4)=(/1.0,1.0,0.20/)
-      ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,0.20/)
+      ReWeightFactor(0:2, SIGMA)=(/0.0,1.0,20.00/)
       ReWeightFactor(0:2, ETA)=(/0.0,0.0,0.20/)
       Mom0=0.0
 
@@ -193,7 +193,8 @@ program main
       ExtMomMesh=0.0
       do j=1, kNum
         !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-        kamp=(j-0.5)*DeltaK
+        ! kamp=(j-0.5)*DeltaK
+        kamp=(j-1)*DeltaK
         ExtMomMesh(1, j)=kamp
         do k=1, ScaleNum
           DiffGamma2K(j, k, 1)=2.0*kamp
@@ -242,6 +243,8 @@ program main
       character*20 :: filename
       !Save Polarization to disk
 
+      scale=1
+
       do o=1, Order
         write(ID, '(i10)') PID
         write(order_str, '(i10)') o
@@ -251,13 +254,12 @@ program main
         write(100, *) "#", Step
         ! write(100, *) "#", DiffSigma(1, o)
         do i=1, kNum
-            Obs = DiffSigma(i, ScaleNum/2, o)
+            Obs = DiffSigma(i, scale, o)
             write(100, *) norm2(ExtMomMesh(:, i)), Obs
         enddo
         close(100)
       enddo
 
-      scale=1
       filename="Eta"//"_"//trim(adjustl(ID))//".dat"
       write(*,*) "Save to disk ..."
       open(100, status="replace", file=trim(filename))
@@ -307,7 +309,8 @@ program main
 
       do i=1, ScaleNum
         do j=1, kNum
-          kamp=(j-0.5)*DeltaK
+          ! kamp=(j-0.5)*DeltaK
+          kamp=(j-1)*DeltaK
           EffGamma2K(j, i)=2.0*kamp+DiffGamma2K(j, i, 2)/Norm(i)
           ! EffGamma2K(j, start)=2.0*(kamp/ScaleTable(start))
           ! if (start==2) then 
@@ -330,7 +333,7 @@ program main
 
       ! if(kk<kMax) then
       !1 <--> DeltaK/2, kNum <--> kMax-DeltaK/2
-      kamp=int(kk/DeltaK)+1
+      ! kamp=int(kk/DeltaK)+1
 
       Factor=CurrWeight/abs(CurrWeight)/ReWeightFactor(CurrOrder, CurrType)
       if(CurrOrder==0) then
@@ -339,9 +342,9 @@ program main
         if(CurrType==GAMMA4) then
             DiffVer(CurrScale, CurrOrder)=DiffVer(CurrScale, CurrOrder)+Factor
         else if(CurrType==SIGMA) then
-            DiffSigma(kamp, CurrScale, CurrOrder)=DiffSigma(kamp, CurrScale, CurrOrder)+Factor
+            DiffSigma(CurrExtMom, CurrScale, CurrOrder)=DiffSigma(CurrExtMom, CurrScale, CurrOrder)+Factor
         else if(CurrOrder>=2 .and. CurrType==ETA) then
-            DiffGamma2K(kamp, CurrScale, CurrOrder)=DiffGamma2K(kamp, CurrScale, CurrOrder)+Factor
+            DiffGamma2K(CurrExtMom, CurrScale, CurrOrder)=DiffGamma2K(CurrExtMom, CurrScale, CurrOrder)+Factor
         endif
 
       endif
@@ -489,15 +492,19 @@ program main
       implicit none
       double precision :: prop, R, Weight
       integer :: OldExtMom
-      integer, parameter :: Delta=3
+      integer, parameter :: Delta=1
 
       if(CurrType==GAMMA4) return
+
+      prop=1.0
   
       OldExtMom=CurrExtMom
       if(grnd()<0.5) then
-        CurrExtMom=CurrExtMom+int(grnd()*Delta)
+        ! CurrExtMom=CurrExtMom+int(grnd()*Delta)
+        CurrExtMom=CurrExtMom+Delta
       else
-        CurrExtMom=CurrExtMom-int(grnd()*Delta)
+        ! CurrExtMom=CurrExtMom-int(grnd()*Delta)
+        CurrExtMom=CurrExtMom-Delta
       endif
       if(CurrExtMom>kNum .or. CurrExtMom<1) then
         CurrExtMom=OldExtMom
@@ -507,9 +514,12 @@ program main
       PropStep(5) = PropStep(5) + 1.0
       Weight = CalcWeight(CurrOrder, CurrType)
       R = prop*abs(Weight)/abs(CurrWeight)
+
+      ! print *, CurrExtMom
+      ! print *, R, prop, Weight, CurrWeight
   
       if(grnd()<R) then
-        AcceptStep(6) = AcceptStep(6)+1.0
+        AcceptStep(5) = AcceptStep(5)+1.0
         CurrWeight = Weight
         ! call UpdateState()
       else
@@ -532,16 +542,12 @@ program main
       if(CurrType==GAMMA4) then
         Index=6
         CurrType=SIGMA
-        ! CurrExtMom=int(grnd()*ScaleTable(CurrScale)/DeltaK)+1
-        ! CurrExtMom=int(ScaleNum/2)+1
-        ! prop=ScaleNum*2
-        CurrExtMom=1
+        CurrExtMom=int(grnd()*kNum)+1
+        prop=kNum
       else
         Index=7
         CurrType=GAMMA4
-        ! if(CurrExtMom>=int(ScaleTable(CurrScale)/DeltaK)+1) return
-        ! if(CurrExtMom>=int(ScaleNum/2)+1) return
-        ! prop=1.0/ScaleNum/2
+        prop=1.0/kNum
       endif
 
       prop=1.0
@@ -821,12 +827,14 @@ program main
       Mom2=LoopMom(:, InterMomIndex+1)
       G1=Green(Mom1, CurrScale, 0)
       G2=Green(Mom2, CurrScale, 0)
-      G3=Green(Mom1+Mom2-ExtK, CurrScale, 0)
+      G3=Green(Mom1+Mom2+ExtK, CurrScale, 0)
       G4=Green(Mom1+Mom2, CurrScale, 0)
-      Weight=-G1*G2*(G3-G4)/6.0*EffVer(CurrScale)**2
+      Weight=-G1*G2*G3
+      if(IsCritical) then
       !if IsCritical is true, then one should subtract Sigma(ExtK=0).
-      !however, it is easy to see Sigma_TwoLoop(ExtK=0) is automatically zero!
-      Sigma_TwoLoop=Weight/(2.0*pi)**(2*D)
+        Weight=Weight+G1*G2*G4
+      endif
+      Sigma_TwoLoop=Weight/(2.0*pi)**(2*D)/6.0*EffVer(CurrScale)**2
     end function
 
     double precision function SigmaK_TwoLoop(ExtK, InterMomIndex)
@@ -839,6 +847,7 @@ program main
       G1=Green(Mom1, CurrScale, 0)
       G2=Green(Mom1+Mom2, CurrScale, 0)
       G3=Green(Mom2+ExtK, CurrScale, 0)
+      G4=Green(Mom2, CurrScale, 0)
       ! G3=Green(Mom2, CurrScale, 0)
       ! G4=Green(ExtK, CurrScale, 0)
       ! G4=Green(Mom2, CurrScale, 0)
@@ -863,6 +872,11 @@ program main
       ! else
       !   SigmaK_TwoLoop=SigmaK_TwoLoop*2.0*kk
       ! endif
-      SigmaK_TwoLoop=SigmaK_TwoLoop*2.0*kk
+      SigmaK_TwoLoop=SigmaK_TwoLoop*2.0*kk*ExtK(1)
+
+      ! SigmaK_TwoLoop=0.0
+      Weight=G1*G2*(G3*G3-G4*G4)/2.0*EffVer(CurrScale)**2
+      ! Weight=G1*(G2*G2)*(G3-G4)/2.0*EffVer(CurrScale)**2
+      SigmaK_TwoLoop=SigmaK_TwoLoop+Weight/(2.0*pi)**(2*D)*2.0
     end function
 end program main
