@@ -113,7 +113,7 @@ program main
       if(mod(iBlck, 10)==0) then
         !!!!!!!!!!!!  Print Info and Save Data !!!!!!!!!!!!!!!!!!!!!!!
         write(*,*) 
-        write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
+        ! write(*, *) "Differ Order 1: ", DiffVer(:, 1)/Norm
         ! write(*, *) "Differ Order 2: ", DiffVer(:, 2)/Norm
         ! write(*, *) "coupling: ", EffVer
         ! scale=ScaleNum/2+1
@@ -544,13 +544,16 @@ program main
         CurrType=SIGMA
         CurrExtMom=int(grnd()*kNum)+1
         prop=kNum
+        ! CurrExtMom=2
+        ! prop=1.0
       else
         Index=7
         CurrType=GAMMA4
         prop=1.0/kNum
+        ! prop=1.0
       endif
 
-      prop=1.0
+      ! prop=1.0
       PropStep(Index) = PropStep(Index) + 1.0
       Weight = CalcWeight(CurrOrder, CurrType)
       R = prop*abs(Weight)/abs(CurrWeight)
@@ -585,13 +588,14 @@ program main
 
         CurrExtMom=int(grnd()*kNum)+1
         prop=kNum
-        ! CurrExtMom=1
+
+        ! CurrExtMom=2
         ! prop=1.0
       else
         Index=9
         CurrType=GAMMA4
-        prop=1.0/kNum
         ! prop=1.0
+        prop=1.0/kNum
       endif
 
       PropStep(Index) = PropStep(Index) + 1.0
